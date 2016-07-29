@@ -38,12 +38,10 @@ const https = require('https');
 const xmldom = require('xmldom');
 const xpath = require('xpath');
 var igcrest = require('ibm-igc-rest');
-var pd = require('pretty-data').pd;
 
 var auth = "";
 var host = "";
 var port = "";
-exports.automationProjectName = "";
 
 /**
  * Set authentication details to access the REST API
@@ -156,21 +154,6 @@ Project.prototype = {
 
   }
 
-
-/*
-  <description>Description of the project</description>
-  <DataSources>
-    <DataSource name="SOURCE1">
-      <Schema name="SCHEMA1">
-        <Table name="TABLE1">
-          <Column name="COL1"/>
-          <Column name="COL2"/>
-        </Table>
-      </Schema>
-    </DataSource>
-  </DataSources>
-*/
-
 };
 
 /**
@@ -203,10 +186,15 @@ function ColumnAnalysis(project, analyzeColumnProperties, captureResultsType, mi
   eRCA.setAttribute("maxFDCaptureSize", maxCaptureSize);
   eRCA.setAttribute("analyzeDataClasses", analyzeDataClasses);
 
-  // TODO: test -- this may not work since we're creating the doc on-the-fly...
-  var task = this.doc.createElement("Tasks");
+  var task = this.doc.getElementsByTagName("Tasks");
+  if (task.length == 0) {
+    task = this.doc.createElement("Tasks");
+    this.doc.documentElement.appendChild(task);
+  } else {
+    task = task[0];
+  }
+
   task.appendChild(eRCA);
-  this.doc.documentElement.appendChild(task);
 
 };
 ColumnAnalysis.prototype = {
@@ -297,9 +285,12 @@ ColumnAnalysis.prototype = {
    */
   addColumn: function(datasource, schema, table, column, hostname) {
     var name = datasource + "." + schema + "." + table + "." + column;
+    // TODO: determine correct way of specifying fully-qualified name that includes hostname
+    /* NOTE: hostname cannot be pre-pended with a "." separator -- hostname itself has .s in it -- results in 500 response code
     if (hostname !== undefined) {
       name = hostname + "." + name;
     }
+    */
     var eC = this.doc.createElement("Column");
     eC.setAttribute("name", name);
     this.doc.getElementsByTagName("RunColumnAnalysis").item(0).appendChild(eC);
@@ -327,9 +318,82 @@ ColumnAnalysis.prototype = {
 
 };
 
+/**
+ * @namespace
+ */
+
+/**
+ * @constructor
+ * @param {Project} project - the project from which to publish analysis results
+ */
+function PublishResults(project) {
+
+  this.doc = project.getProjectDoc();
+    
+  var ePR = this.doc.createElement("PublishResults");
+
+  var task = this.doc.getElementsByTagName("Tasks");
+  if (task.length == 0) {
+    task = this.doc.createElement("Tasks");
+    this.doc.documentElement.appendChild(task);
+  } else {
+    task = task[0];
+  }
+
+  task.appendChild(ePR);
+
+};
+PublishResults.prototype = {
+
+  doc: null,
+
+  /**
+   * Use to add a table whose results should be published -- the table can be '*' to specify all tables
+   *
+   * @function
+   * @param {string} datasource
+   * @param {string} schema
+   * @param {string} table
+   * @param {string} [hostname]
+   */
+  addTable: function(datasource, schema, table, hostname) {
+    var name = datasource + "." + schema + "." + table;
+    // TODO: determine correct way of specifying fully-qualified name that includes hostname
+    /* NOTE: hostname cannot be pre-pended with a "." separator -- hostname itself has .s in it -- results in 500 response code
+    if (hostname !== undefined) {
+      name = hostname + "." + name;
+    }
+    */
+    var eC = this.doc.createElement("Table");
+    eC.setAttribute("name", name);
+    this.doc.getElementsByTagName("PublishResults").item(0).appendChild(eC);
+  },
+
+  /**
+   * Use to add a file whose results should be published -- file can be '*' to specify all files
+   *
+   * @function
+   * @param {string} connection - e.g. "HDFS"
+   * @param {string} path - directory path, not including the filename
+   * @param {string} filename
+   * @param {string} [hostname]
+   */
+  addFile: function(connection, path, filename, hostname) {
+    var name = connection + ":" + path + ":" + filename;
+    if (hostname !== undefined) {
+      name = hostname + ":" + name;
+    }
+    var eF = this.doc.createElement("Table");
+    eF.setAttribute("name", name);
+    this.doc.getElementsByTagName("PublishResults").item(0).appendChild(eF);
+  }
+
+};
+
 if (typeof require == 'function') {
   exports.Project = Project;
   exports.ColumnAnalysis = ColumnAnalysis;
+  exports.PublishResults = PublishResults;
 }
 
 /**
@@ -504,7 +568,17 @@ function _getAllTablesAndColumnsForSchema(hostname, datasource, schema, callback
  * @private
  */
 function _createProjectRequest(inputXML, callback) {
-  exports.makeRequest('POST', "/ibm/iis/ia/api/create", inputXML, callback);
+  exports.makeRequest('POST', "/ibm/iis/ia/api/create", inputXML, function(res, resCreate) {
+    var err = null;
+    if (res.statusCode != 200) {
+      err = "Unsuccessful request " + res.statusCode;
+      console.error(err);
+      console.error('headers: ', res.headers);
+      throw new Error(err);
+    }
+    callback(err, resCreate);
+    return resCreate;
+  });
 }
 
 /**
@@ -556,7 +630,6 @@ exports.createAnalysisProject = function(name, description, type, callback) {
 
                 if (schemasDiscovered.length == schemasAdded.length) {
                   var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-                  //console.log(pd.xml(input));
                   _createProjectRequest(input, callback);
                 }
 
@@ -586,7 +659,14 @@ exports.createAnalysisProject = function(name, description, type, callback) {
  */
 exports.getProjectList = function(callback) {
 
-  this.makeRequest('GET', "/ibm/iis/ia/api/projects", null, function(err, resXML) {
+  this.makeRequest('GET', "/ibm/iis/ia/api/projects", null, function(res, resXML) {
+    var err = null;
+    if (res.statusCode != 200) {
+      err = "Unsuccessful request " + res.statusCode;
+      console.error(err);
+      console.error('headers: ', res.headers);
+      throw new Error(err);
+    }
     var aNames = [];
     var resDoc = new xmldom.DOMParser().parseFromString(resXML);
     var nlPrj = xpath.select("//*[local-name(.)='Project']", resDoc);
@@ -594,6 +674,7 @@ exports.getProjectList = function(callback) {
       aNames.push(nlPrj[i].getAttribute("name"));
     }
     callback(err, aNames);
+    return aNames;
   });
 
 }
@@ -601,44 +682,73 @@ exports.getProjectList = function(callback) {
 /**
  * Run a full column analysis against the data source details specificed
  *
+ * @param {string} projectName - name of the IA project
  * @param {string} type - the type of data ["database", "file"]
  * @param {string} hostname - hostname of the system containing the data to be analyzed
  * @param {string} datasource - database (type "database") or connection (type "file")
  * @param {string} location - data schema (type "database") or directory path (type "file")
  * @param {requestCallback} callback - callback that handles the response
  */
-exports.runFullColumnAnalysis = function(type, hostname, datasource, location, callback) {
+exports.runColumnAnalysis = function(projectName, type, hostname, datasource, location, callback) {
 
-  var proj = new Project("SampleAutomation");
-  proj.setDescription("Testing automatically profiling all tables and columns.");
+  var proj = new Project(projectName);
   var ca = new ColumnAnalysis(proj, true, "CAPTURE_ALL", 5000, 10000, true);
 
   if (type === "database") {
-  
-    _getAllTablesAndColumnsForDataSource(hostname.toUpperCase(), datasource, location, function(err, resTablesToColumns) {
-      
-      for (var sTblName in resTablesToColumns) {
-        if (resTablesToColumns.hasOwnProperty(sTblName)) {
-          proj.addTable(datasource, location, sTblName, resTablesToColumns[sTblName]);
-        }
-      }
-
-      ca.addColumn(datasource, location, "*", "*", hostname);
-      
-      var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-      exports.makeRequest('POST', "/ibm/iis/ia/api/create", input, callback);
-
-      //var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-      //console.log(input);
-      //exports.makeRequest('POST', "/ibm/iis/ia/api/executeTasks", input, callback);
-
-    });
-  
+    ca.addColumn(datasource, location, "*", "*", hostname.toUpperCase());
   } else if (type === "file") {
-    ca.addFileField(datasource, location, "*", "*", hostname);
-    // TODO: handle file-based analysis
-  
+    ca.addFileField(datasource, location, "*", "*", hostname.toUpperCase());
   }
+
+  var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
+  exports.makeRequest('POST', "/ibm/iis/ia/api/executeTasks", input, function(res, resExec) {
+    var err = null;
+    if (res.statusCode != 200) {
+      err = "Unsuccessful request " + res.statusCode;
+      console.error(err);
+      console.error('headers: ', res.headers);
+      throw new Error(err);
+    }
+    callback(err, resExec);
+    return resExec;
+  });
+
+}
+
+/**
+ * Publish analysis results
+ *
+ * @param {string} projectName - name of the IA project
+ * @param {string} type - the type of data ["database", "file"]
+ * @param {string} hostname - hostname of the system with analysis results to be published
+ * @param {string} datasource - database (type "database") or connection (type "file")
+ * @param {string} location - data schema (type "database") or directory path (type "file")
+ * @param {requestCallback} callback - callback that handles the response
+ */
+exports.publishResults = function(projectName, type, hostname, datasource, location, callback) {
+
+  var proj = new Project(projectName);
+  var pr = new PublishResults(proj);
+
+  if (type === "database") {
+    pr.addTable(datasource, location, "*", hostname.toUpperCase());
+  } else if (type === "file") {
+    pr.addFile(datasource, location, "*", hostname.toUpperCase());
+  }
+
+  var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
+  console.log(input);
+  exports.makeRequest('POST', "/ibm/iis/ia/api/publishResults", input, function(res, resExec) {
+    var err = null;
+    if (res.statusCode != 200) {
+      err = "Unsuccessful request " + res.statusCode;
+      console.error(err);
+      console.error('headers: ', res.headers);
+      throw new Error(err);
+    }
+    callback(err, resExec);
+    return resExec;
+  });
 
 }
 
@@ -646,10 +756,81 @@ exports.runFullColumnAnalysis = function(type, hostname, datasource, location, c
  * Get the status of a running task
  *
  * @param {string} executionID - the unique identification number of the running task
- * @param {requestCallback} callback - callback that handles the response
+ * @param {statusCallback} callback - callback that handles the response
  */
 exports.getTaskStatus = function(executionID, callback) {
-  this.makeRequest('GET', "/ibm/iis/ia/api/analysisStatus?scheduleID=" + executionID, null, callback);
+  this.makeRequest('GET', "/ibm/iis/ia/api/analysisStatus?scheduleID=" + executionID, null, function(res, resStatus) {
+    var err = null;
+    if (res.statusCode != 200) {
+      err = "Unsuccessful request " + res.statusCode;
+      console.error(err);
+      console.error('headers: ', res.headers);
+      throw new Error(err);
+    }
+    var stat = {};
+    var resDoc = new xmldom.DOMParser().parseFromString(resStatus);
+    var nlExec = xpath.select("//*[local-name(.)='TaskExecution']", resDoc);
+    if (nlExec.length > 1) {
+      err = "More than one result found";
+    }
+    for (var i = 0; i < nlExec.length; i++) {
+      stat.executionId = nlExec[i].getAttribute("executionId");
+      stat.executionTime = nlExec[i].getAttribute("executionTime");
+      stat.progress = nlExec[i].getAttribute("progress");
+      stat.status = nlExec[i].getAttribute("status");
+    }
+    callback(err, stat);
+    return stat;
+  });
+}
+
+/**
+ * Retrieves any execution IDs from the provided response
+ *
+ * @param {string} resXML
+ * @returns {string[]} an array of execution IDs
+ */
+exports.getExecutionIDsFromResponse = function(resXML) {
+
+  var executionIDs = [];
+  var resDoc = new xmldom.DOMParser().parseFromString(resXML);
+  var nlTask = xpath.select("//*[local-name(.)='ScheduledTask']", resDoc);
+  for (var i = 0; i < nlTask.length; i++) {
+    var executionID = nlTask[i].getAttribute("scheduleId");
+    executionIDs.push(executionID);
+  }
+  return executionIDs;
+
+}
+
+/**
+ * Issues a request to reindex Solr for any resutls to appear appropriately in the IA Thin Client
+ *
+ * @param {int} batchSize - The batch size to retrieve information from the database. Increasing this size may improve performance but there is a possibility of reindex failure. The default is 25. The maximum value is 1000.
+ * @param {int} solrBatchSize - The batch size to use for Solr indexing. Increasing this size may improve performance. The default is 100. The maximum value is 1000.
+ * @param {boolean} upgrade - Specifies whether to upgrade the index schema from a previous version, and is a one time requirement when upgrading from one version of the thin client to another. The schema upgrade can be used to upgrade from any previous version of the thin client. The value true will upgrade the index schema. The value false is the default, and will not upgrade the index schema.
+ * @param {boolean} force - Specifies whether to force reindexing if indexing is already in process. The value true will force a reindex even if indexing is in process. The value false is the default, and prevents a reindex if indexing is already in progress. This option should be used if a previous reindex request is aborted for any reason. For example, if InfoSphere Information Server services tier system went offline, you would use this option.
+ * @param {reindexCallback} callback - status of the reindex ["REINDEX_SUCCESSFUL"]
+ */
+exports.reindexThinClient = function(batchSize, solrBatchSize, upgrade, force, callback) {
+  var request = "/ibm/iis/dq/da/rest/v1/reindex";
+  request = request
+            + "batchSize=" + _getValueOrDefault(batchSize, 25)
+            + "solrBatchSize=" + _getValueOrDefault(solrBatchSize, 100)
+            + "upgrade=" + _getValueOrDefault(upgrade, false)
+            + "force=" + _getValueOrDefault(force, true);
+            console.log(request);
+  this.makeRequest('GET', request, null, function(res, resStatus) {
+    var err = null;
+    if (res.statusCode != 200) {
+      err = "Unsuccessful request " + res.statusCode;
+      console.error(err);
+      console.error('headers: ', res.headers);
+      throw new Error(err);
+    }
+    callback(err, resStatus);
+    return resStatus;
+  });
 }
 
 /**
@@ -664,4 +845,18 @@ exports.getTaskStatus = function(executionID, callback) {
  * @callback listCallback
  * @param {string} errorMessage - any error message, or null if no errors
  * @param {string[]} aResponse - the response of the request, in the form of an array
+ */
+
+/**
+ * This callback is invoked as the result of an IA REST API call, providing the response of that request.
+ * @callback statusCallback
+ * @param {string} errorMessage - any error message, or null if no errors
+ * @param {Object} status - the response of the request, in the form of an object keyed by execution ID, with subkeys for executionTime, progress and status ["running", "successful", "failed", "cancelled"]
+ */
+
+/**
+ * This callback is invoked as the result of an IA REST API call to re-index Solr for IATC
+ * @callback reindexCallback
+ * @param {string} errorMessage - any error message, or null if no errors
+ * @param {string} status - the status of the reindex operation ["REINDEX_SUCCESSFUL"]
  */
