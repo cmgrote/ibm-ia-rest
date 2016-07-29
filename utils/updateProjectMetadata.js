@@ -51,8 +51,7 @@ var argv = yargs
     .option('d', {
       alias: 'domain',
       describe: 'Host and port for invoking IA REST',
-      demand: true, requiresArg: true, type: 'string',
-      default: "services:9445"
+      demand: true, requiresArg: true, type: 'string'
     })
     .option('u', {
       alias: 'deployment-user',
@@ -77,6 +76,5 @@ iarest.setAuth(argv.deploymentUser, argv.deploymentUserPassword);
 iarest.setServer(host_port[0], host_port[1]);
 
 iarest.createAnalysisProject(argv.name, argv.desc, "database", function(err, results) {
-  //console.error(err);
   console.log(results);
 });
