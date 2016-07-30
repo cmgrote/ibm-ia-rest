@@ -26,9 +26,6 @@
  * ./updateProjectMetadata.js -d hostname:9445 -u isadmin -p isadmin
  */
 
-//const fs = require('fs-extra');
-//const pd = require('pretty-data').pd;
-//const xmldom = require('xmldom');
 var iarest = require('ibm-ia-rest');
 
 // Command-line setup
@@ -75,6 +72,19 @@ var host_port = argv.domain.split(":");
 iarest.setAuth(argv.deploymentUser, argv.deploymentUserPassword);
 iarest.setServer(host_port[0], host_port[1]);
 
-iarest.createAnalysisProject(argv.name, argv.desc, "database", function(err, results) {
-  console.log(results);
+var prjName = argv.name;
+var prjDesc = argv.desc;
+
+iarest.getProjectList(function(err, resList) {
+
+  var bCreate = (resList.indexOf(prjName) == -1);
+  if (bCreate) {
+    console.log("Project not found, creating...");
+  } else {
+    console.log("Project found, updating...");
+  }
+  iarest.createOrUpdateAnalysisProject(prjName, prjDesc, "database", bCreate, function(err, results) {
+    console.log(results);
+  });
+
 });

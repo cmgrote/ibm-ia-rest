@@ -567,8 +567,9 @@ function _getAllTablesAndColumnsForSchema(hostname, datasource, schema, callback
 /**
  * @private
  */
-function _createProjectRequest(inputXML, callback) {
-  exports.makeRequest('POST', "/ibm/iis/ia/api/create", inputXML, function(res, resCreate) {
+function _createOrUpdateProjectRequest(inputXML, bCreate, callback) {
+  var endpoint = (bCreate) ? "/ibm/iis/ia/api/create" : "/ibm/iis/ia/api/update"
+  exports.makeRequest('POST', endpoint, inputXML, function(res, resCreate) {
     var err = null;
     if (res.statusCode != 200) {
       err = "Unsuccessful request " + res.statusCode;
@@ -582,14 +583,15 @@ function _createProjectRequest(inputXML, callback) {
 }
 
 /**
- * Create an analysis project -- necessary before any tasks can be executed
+ * Create or update an analysis project -- necessary before any tasks can be executed
  *
  * @param {string} name - name of the project
  * @param {string} description - description of the project
  * @param {string} type - the type of data the project will handle ["database", "file"]
+ * @param {boolean} bCreate - true iff the project should be created; otherwise an update will be attempted
  * @param {requestCallback} callback - callback that handles the response
  */
-exports.createAnalysisProject = function(name, description, type, callback) {
+exports.createOrUpdateAnalysisProject = function(name, description, type, bCreate, callback) {
 
   var schemasDiscovered = [];
   var schemasAdded = [];
@@ -630,7 +632,7 @@ exports.createAnalysisProject = function(name, description, type, callback) {
 
                 if (schemasDiscovered.length == schemasAdded.length) {
                   var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-                  _createProjectRequest(input, callback);
+                  _createOrUpdateProjectRequest(input, bCreate, callback);
                 }
 
               });
