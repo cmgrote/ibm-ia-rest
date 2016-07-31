@@ -45,10 +45,10 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.ibm.com/christopher-grote/ibm-igc-rest.git"
+    "url": "https://github.ibm.com/christopher-grote/ibm-ia-rest.git"
   },
   "bugs": {
-    "url": "https://github.ibm.com/christopher-grote/ibm-igc-rest/issues"
+    "url": "https://github.ibm.com/christopher-grote/ibm-ia-rest/issues"
   },
-  "homepage": "https://github.ibm.com/christopher-grote/ibm-igc-rest"
+  "homepage": "https://github.ibm.com/christopher-grote/ibm-ia-rest"
 }
