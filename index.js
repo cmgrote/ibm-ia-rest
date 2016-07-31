@@ -739,7 +739,6 @@ exports.publishResults = function(projectName, type, hostname, datasource, locat
   }
 
   var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-  console.log(input);
   exports.makeRequest('POST', "/ibm/iis/ia/api/publishResults", input, function(res, resExec) {
     var err = null;
     if (res.statusCode != 200) {
@@ -817,11 +816,10 @@ exports.getExecutionIDsFromResponse = function(resXML) {
 exports.reindexThinClient = function(batchSize, solrBatchSize, upgrade, force, callback) {
   var request = "/ibm/iis/dq/da/rest/v1/reindex";
   request = request
-            + "batchSize=" + _getValueOrDefault(batchSize, 25)
-            + "solrBatchSize=" + _getValueOrDefault(solrBatchSize, 100)
-            + "upgrade=" + _getValueOrDefault(upgrade, false)
-            + "force=" + _getValueOrDefault(force, true);
-            console.log(request);
+            + "?batchSize=" + _getValueOrDefault(batchSize, 25)
+            + "&solrBatchSize=" + _getValueOrDefault(solrBatchSize, 100)
+            + "&upgrade=" + _getValueOrDefault(upgrade, false)
+            + "&force=" + _getValueOrDefault(force, true);
   this.makeRequest('GET', request, null, function(res, resStatus) {
     var err = null;
     if (res.statusCode != 200) {

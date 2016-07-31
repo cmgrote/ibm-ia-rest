@@ -23,15 +23,11 @@
  * @requires progress
  * @requires yargs
  * @example
- * // executes column analysis for all tables and columns in the TESTSCH schema of the TESTDB database, using the "Automated Profiling" project
- * ./runColumnAnalysis.js -n "Automated Profiling" -t database -o REPO -s TESTDB -l TESTSCH -d hostname:9445 -u isadmin -p isadmin
+ * // executes column analysis for all tables and columns in the TESTSCH schema of the TESTDB database, using the "Automated Profiling" project (by default)
+ * ./runColumnAnalysis.js -t database -o REPO -s TESTDB -l TESTSCH -d hostname:9445 -u isadmin -p isadmin
  */
 
-//const fs = require('fs-extra');
-//const pd = require('pretty-data').pd;
-//const xmldom = require('xmldom');
 var iarest = require('ibm-ia-rest');
-//var sleep = require('sleep').sleep;
 var ProgressBar = require('progress');
 
 // Command-line setup
@@ -107,7 +103,7 @@ iarest.runColumnAnalysis(argv.name, argv.type, argv.host, argv.source, argv.loca
   for (var i = 0; i < aIDs.length; i++) {
     var execId = aIDs[i];
 
-    var timer = setInterval(waitForCompletion, 5000, execId, function(status, resExec) {
+    var timer = setInterval(waitForCompletion, 10000, execId, function(status, resExec) {
 
       clearInterval(timer);
       if (status === "successful") {
@@ -128,45 +124,22 @@ iarest.runColumnAnalysis(argv.name, argv.type, argv.host, argv.source, argv.loca
       }
 
     });
-/*  
-    waitForCompletion(execId, function(status, resExec) {
-    
-      if (status === "successful") {
 
-        console.log("Publishing results...");
-        iarest.publishResults(argv.name, argv.type, argv.host, argv.source, argv.location, function(err, resPublish) {
-      
-          console.log("... status: " + resPublish);
-          console.log("Reindexing Solr for the thin client...");
-          iarest.reindexThinClient(25, 100, false, true, function(err, resIndex) {
-            console.log("... status: " + resIndex);
-          });
-
-        });
-
-      }
-
-    });
-*/
   }
   
 });
 
 function waitForCompletion(id, callback) {  
-//  sleep(10);
   iarest.getTaskStatus(id, function(err, results) {
     var status = results.status;
     var progress = results.progress;
     if (status === "running") {
-      //console.log("... running, at " + progress + "% -- waiting 10 seconds to check again (" + results.executionId + ")");
       bar.update(progress/100, {'execId': results.executionId});
-//      waitForCompletion(id, callback);
     } else if (status === "successful") {
       console.log("\n  completed successfully after " + results.executionTime + " ms");
       callback(status, results);
     } else {
       console.warn("\n  problem completing: " + JSON.stringify(results));
-      //console.warn("... check logs under $ISHOME/ASBNode/logs/ for additional information.");
       callback(status, results);
     }
   });
