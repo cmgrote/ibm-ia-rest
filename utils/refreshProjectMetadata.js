@@ -17,13 +17,16 @@
  */
 
 /**
- * @file Keep the metadata up-to-date in the base project from which all automated profiling can be driven
+ * @file Refresh the metadata handled by the specified import areas
  * @license Apache-2.0
  * @requires ibm-ia-rest
  * @requires yargs
  * @example
- * // updates the base automation project, using a default name of "Automated Profiling"
- * ./updateProjectMetadata.js -d hostname:9445 -u isadmin -p isadmin
+ * // refreshes all of the metadata that can be found in IGC into the Information Analyzer project (by default called "Automated Profiling")
+ * ./refreshProjectMetadata.js -d hostname:9445 -u isadmin -p isadmin
+ * @example
+ * // refreshes all of the metadata that was updated in IGC in the last 24 hours into the Information Analyzer project (by default called "Automated Profiling")
+ * ./refreshProjectMetadata.js -t 24 -d hostname:9445 -u isadmin -p isadmin
  */
 
 var iarest = require('ibm-ia-rest');
@@ -31,7 +34,7 @@ var iarest = require('ibm-ia-rest');
 // Command-line setup
 var yargs = require('yargs');
 var argv = yargs
-    .usage('Usage: $0 -n <name> -x <description> -d <host>:<port> -u <user> -p <password>')
+    .usage('Usage: $0 -n <name> -x <description> -t <numberOfHours> -d <host>:<port> -u <user> -p <password>')
     .option('n', {
       alias: 'name',
       describe: 'Name of the Information Analyzer project',
@@ -43,6 +46,11 @@ var argv = yargs
       describe: 'Description of the Information Analyzer project',
       demand: true, requiresArg: true, type: 'string',
       default: "A base project for the automation of profiling"
+    })
+    .option('t', {
+      alias: 'time',
+      describe: 'Update the project with anything in IGC modified within the last T hours',
+      requiresArg: true, type: 'number'
     })
     .env('DS')
     .option('d', {
@@ -68,22 +76,26 @@ var argv = yargs
     .argv;
 
 // Base settings
+var bContinueOnError = true;
 var host_port = argv.domain.split(":");
+var lastRefreshTime = argv.time;
+
 iarest.setAuth(argv.deploymentUser, argv.deploymentUserPassword);
 iarest.setServer(host_port[0], host_port[1]);
 
 var prjName = argv.name;
 var prjDesc = argv.desc;
 
+var now = new Date();
+var addAfter = new Date();
+if (lastRefreshTime !== undefined && lastRefreshTime !== "") {
+  addAfter = addAfter.setHours(now.getHours() - lastRefreshTime);
+}
+
 iarest.getProjectList(function(err, resList) {
 
-  var bCreate = (resList.indexOf(prjName) == -1);
-  if (bCreate) {
-    console.log("Project not found, creating...");
-  } else {
-    console.log("Project found, updating...");
-  }
-  iarest.createOrUpdateAnalysisProject(prjName, prjDesc, "database", bCreate, function(err, results) {
+  // TODO: replace database hard-coding (shouldn't be based on a pre-defined type at all, just timestamp?)
+  iarest.createOrUpdateAnalysisProject(prjName, prjDesc, "database", addAfter, function(err, results) {
     console.log(results);
   });
 
