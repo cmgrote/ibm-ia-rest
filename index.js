@@ -21,12 +21,15 @@
  * @requires xpath
  * @requires ibm-igc-rest
  * @example
- * // executes a column analysis against the schema "TESTSCH", in the database "TESTDB", on the host "REPO"
+ * // runs column analysis for any objects in Automated Profiling that have not been analyzed since the moment the script is run (new Date())
  * var iarest = require('ibm-ia-rest');
  * iarest.setAuth("isadmin", "isadmin");
  * iarest.setServer("hostname", "9445");
- * iarest.runFullColumnAnalysis("database", "REPO", "TESTDB", "TESTSCH", function(err, results) {
- *   // TODO: demonstrate get the executionID out of the results
+ * iarest.getStaleAnalysisResults("Automated Profiling", new Date(), function(errStale, aStaleSources) {
+ *   iarest.runColumnAnalysisForSources("Automated Profiling", aStaleSources, function(errCA, resCA) {
+ *     var aExecIDs = iarest.getExecutionIDsFromResponse(resCA);
+ *     // Note that the API returns async; if you want to busy-wait you need to poll the execution ID
+ *   });
  * });
  */
 
@@ -476,6 +479,12 @@ function _getAllHostsWithDatabases(callback) {
           "property": "databases",
           "operator": "isNull",
           "negated": true
+        },
+        {
+          "property": "labels.name",
+          "operator": "=",
+          "value": ignoreLabelName,
+          "negated": true
         }
       ]
     }
@@ -602,6 +611,12 @@ function _getAllTablesAndColumnsForSchema(hostname, datasource, schema, updatedA
           "property": "database_schema.database.host.name",
           "operator": "=",
           "value": hostname
+        },
+        {
+          "property": "labels.name",
+          "operator": "=",
+          "value": ignoreLabelName,
+          "negated": true
         }
       ]
     }
@@ -620,46 +635,6 @@ function _getAllTablesAndColumnsForSchema(hostname, datasource, schema, updatedA
     callback(err, resSearch);
 
   });
-
-}
-
-/**
- * @private
- */
-function _getAllColumnsForTable(hostname, datasource, schema, table, callback) {
-
-  var json = {
-    "pageSize": "10000",
-    "properties": [ "name", "database_columns.name", "database_schema.name", "database_schema.database.name" ],
-    "types": [ "database_table" ],
-    "where":
-    {
-      "operator": "and",
-      "conditions":
-      [
-        {
-          "property": "name",
-          "operator": "=",
-          "value": table
-        },
-        {
-          "property": "database_schema.name",
-          "operator": "=",
-          "value": schema
-        },
-        {
-          "property": "database_schema.database.name",
-          "operator": "=",
-          "value": datasource
-        },
-        {
-          "property": "database_schema.database.host.name",
-          "operator": "=",
-          "value": hostname
-        }
-      ]
-    }
-  };
 
 }
 
@@ -776,6 +751,8 @@ function _createOrUpdateIgnoreList(callback) {
 
 /**
  * Adds the IADB schema to a list of objects for Information Analyzer to ignore (to prevent them being added to projects or being analysed); this is accomplished by creating a label 'InformationAnalyzer'
+ *
+ * @param {requestCallback} callback - callback that handles the response
  */
 exports.addIADBToIgnoreList = function(callback) {
   
@@ -936,332 +913,6 @@ exports.createOrUpdateAnalysisProject = function(name, description, type, update
   });
 
 }
-
-/**
- * @private
-
-function _addElementsByFilter(project, db, schema, table, schemasDiscovered, schemasAdded, tablesDiscovered, tablesAdded, callback) {
-
-  var json = {};
-  var type = "";
-
-  var schemasDiscoveredLocal = [];
-  var schemasAddedLocal = [];
-  var tablesDiscoveredLocal = [];
-  var tablesAddedLocal = [];
-
-  // If there were already objects added and all we have is a db filter, skip any further work
-  // (the db filter isn't really a filter -- it's a catch-all if no other explicit objects or filters were defined)
-  if ((schemasDiscovered.length > 0 || tablesDiscovered.length > 0) && (schema === undefined || schema === "") && (table === undefined || table === "")) {
-    //console.log("Skipping otherwise full database sweep, as other objects were explicitly defined.");
-    callback("Skipping otherwise full database sweep, as other objects were explicitly defined.", project, schemasDiscovered, schemasAdded, tablesDiscovered, tablesAdded);
-  } else {
-
-    if (db !== undefined && db !== "") {
-  
-      type = "ALL_TABLES";
-  
-      json = {
-        "pageSize": "10000",
-        "properties": [ "name", "database.name", "database.host.name" ],
-        "types": [ "database_schema" ],
-        "where":
-        {
-          "operator": "and",
-          "conditions":
-          [
-            {
-              "property": "database.name",
-              "operator": "=",
-              "value": db
-            }
-          ]
-        }
-      };
-  
-      if (schema !== undefined && schema !== "") {
-  
-        type = "ALL_TABLES";
-        json.where.conditions.push({
-          "property": "name",
-          "operator": "like %{0}%",
-          "value": schema
-        });
-  
-      }
-  
-      if (table !== undefined && table !== "") {
-  
-        type = "ALL_COLUMNS";
-        json.properties = [ "name", "database_schema.name", "database_schema.database.name", "database_schema.database.host.name" ];
-        json.types = [ "database_table" ];
-        json.where.conditions = [
-          {
-            "property": "name",
-            "operator": "like %{0}%",
-            "value": table
-          },
-          {
-            "property": "database_schema.database.name",
-            "operator": "=",
-            "value": db
-          }
-        ];
-  
-        if (schema !== undefined && schema !== "") {
-          json.where.conditions.push({
-            "property": "database_schema.name",
-            "operator": "like %{0}%",
-            "value": schema
-          });
-  
-        }
-  
-      }
-  
-    }
-  
-    igcrest.search(json, function (err, resSearch) {
-  
-      if (type === "ALL_TABLES") {
-  
-        for (var i = 0; i < resSearch.items.length; i++) {
-          var item = resSearch.items[i];
-          var sSchemaName = item._name;
-          var sDbName = item["database.name"];
-          var sHostName = item["database.host.name"];
-  
-          schemasDiscovered.push(sHostName + "/" + sDbName + "/" + sSchemaName);
-          schemasDiscoveredLocal.push(sHostName + "/" + sDbName + "/" + sSchemaName);
-  
-          _getAllTablesAndColumnsForSchema(sHostName, sDbName, sSchemaName, function(errTbls, resTbls) {
-  
-            schemasAdded.push(sDbName + "/" + sSchemaName);
-            schemasAddedLocal.push(sDbName + "/" + sSchemaName);
-            for (var m = 0; m < resTbls.items.length; m++) {
-              var item = resTbls.items[m];
-              var sTblName = item._name;
-              var aColNames = item["database_columns.name"];
-              var sSchemaName = item["database_schema.name"];
-              var sDbName = item["database_schema.database.name"];
-              project.addTable(sDbName, sSchemaName, sTblName, aColNames);
-            }
-  
-            if (schemasDiscoveredLocal.length == schemasAddedLocal.length) {
-              callback(errTbls, project, schemasDiscovered, schemasAdded, tablesDiscovered, tablesAdded);
-            }
-  
-          });
-  
-        }
-  
-      } else if (type === "ALL_COLUMNS") {
-  
-        for (var i = 0; i < resSearch.items.length; i++) {
-          var item = resSearch.items[i];
-          var sTblName = item._name;
-          var sSchemaName = item["database_schema.name"];
-          var sDbName = item["database_schema.database.name"];
-          var sHostName = item["database_schema.database.host.name"];
-  
-          tablesDiscovered.push(sHostName + "/" + sDbName + "/" + sSchemaName + "/" + sTblName);
-          tablesDiscoveredLocal.push(sHostName + "/" + sDbName + "/" + sSchemaName + "/" + sTblName);
-  
-          _getAllColumnsForTable(sHostName, sDbName, sSchemaName, sTblName, function(errCols, resTbls) {
-  
-            for (var m = 0; m < resTbls.items.length; m++) {
-              var item = resTbls.items[m];
-              var sTblName = item._name;
-              var aColNames = item["database_columns.name"];
-              var sSchemaName = item["database_schema.name"];
-              var sDbName = item["database_schema.database.name"];
-              tablesAdded.push(sDbName + "/" + sSchemaName + "/" + sTblName);
-              tablesAddedLocal.push(sDbName + "/" + sSchemaName + "/" + sTblName);
-              project.addTable(sDbName, sSchemaName, sTblName, aColNames);
-            }
-  
-            if (tablesDiscoveredLocal.length == tablesAddedLocal.length && schemasDiscoveredLocal.length == schemasAddedLocal.length) {
-              callback(errCols, project, schemasDiscovered, schemasAdded, tablesDiscovered, tablesAdded);
-            }
-  
-          });
-  
-        }
-  
-      }
-  
-      //callback(err, project);
-  
-    });
-
-  }
-
-}
-
-/**
- * Create or update an analysis project, to include all contained objects known to IGC within the provided metadata parameters -- necessary before any tasks can be executed
- *
- * @see module:ibm-imam-cli~loadMetadata
- * @see module:ibm-imam-cli~getProjectParamsFromMetadataParams
- * @param {string} name - name of the project
- * @param {string} description - description of the project
- * @param {string} assetType - the type of object of 'assetName' ["database", "file"]
- * @param {Object} projectParams - project parameters, for databases with 'hostname', 'dbNames', 'schemaNames', 'tableNames', 'dbFilter', 'schemaFilter' and 'tableFilter'
- * @param {boolean} bCreate - true iff the project should be created; otherwise an update will be attempted
- * @param {requestCallback} callback - callback that handles the response
-
-exports.createOrUpdateAnalysisProjectByMetadataParams = function(name, description, assetType, projectParams, bCreate, callback) {
-
-  var proj = new Project(name);
-  proj.setDescription(description);
-
-  var tablesDiscovered = [];
-  var tablesAdded = [];
-  var schemasDiscovered = [];
-  var schemasAdded = [];
-
-  if (assetType === "database") {
-
-    // For any table objects explicitly listed, include all their columns
-    var sHostName = projectParams.hostname;
-    var aTables = projectParams.tableNames;
-    for (var i = 0; i < aTables.length; i++) {
-      var sTblString = aTables[i];
-      var aTblTokens = sTblString.split("|");
-      var sDbName = aTblTokens[0];
-      var sSchemaName = aTblTokens[1];
-      var sTblName = aTblTokens[3];
-
-      tablesDiscovered.push(sDbName + "/" + sSchemaName + "/" + sTblName);
-
-      _getAllColumnsForTable(sHostName, sDbName, sSchemaName, sTblName, function(errCols, resTbls) {
-
-        for (var m = 0; m < resTbls.items.length; m++) {
-          var item = resTbls.items[m];
-          var sTblName = item._name;
-          var aColNames = item["database_columns.name"];
-          var sSchemaName = item["database_schema.name"];
-          var sDbName = item["database_schema.database.name"];
-          tablesAdded.push(sDbName + "/" + sSchemaName + "/" + sTblName);
-          proj.addTable(sDbName, sSchemaName, sTblName, aColNames);
-        }
-
-        console.log("Discovered vs added (tbl): " + schemasDiscovered.length + ":" + tablesDiscovered.length + "/" + schemasAdded.length + ":" + tablesAdded.length);
-        if (schemasDiscovered.length == schemasAdded.length && tablesDiscovered.length == tablesAdded.length) {
-          console.log("Creating within (tbl)");
-          var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-          console.log(input);
-          _createOrUpdateProjectRequest(input, bCreate, callback);
-        }
-
-      });
-
-    }
-
-    // For any schema objects explicitly listed, include all their tables (and their columns)
-    var aSchemas = projectParams.schemaNames;
-    for (var i = 0; i < aSchemas.length; i++) {
-      var sSchString = aSchemas[i];
-      var aSchTokens = sSchString.split("|");
-      var sDbName = aSchTokens[0];
-      var sSchemaName = aSchTokens[1];
-
-      schemasDiscovered.push(sDbName + "/" + sSchemaName);
-
-      _getAllTablesAndColumnsForSchema(sHostName, sDbName, sSchemaName, function(errTbls, resTbls) {
-
-        schemasAdded.push(sDbName + "/" + sSchemaName);
-        for (var m = 0; m < resTbls.items.length; m++) {
-          var item = resTbls.items[m];
-          var sTblName = item._name;
-          var aColNames = item["database_columns.name"];
-          var sSchemaName = item["database_schema.name"];
-          var sDbName = item["database_schema.database.name"];
-          proj.addTable(sDbName, sSchemaName, sTblName, aColNames);
-        }
-
-        console.log("Discovered vs added (sch): " + schemasDiscovered.length + ":" + tablesDiscovered.length + "/" + schemasAdded.length + ":" + tablesAdded.length);
-        if (schemasDiscovered.length == schemasAdded.length && tablesDiscovered.length == tablesAdded.length) {
-          console.log("Creating within (sch)");
-          var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-          console.log(input);
-          _createOrUpdateProjectRequest(input, bCreate, callback);
-        }
-
-      });
-
-    }
-
-    // For any database objects listed explicitly, include all of their schemas, tables, and columns
-    var aDBs = projectParams.dbNames;
-    for (var i = 0; i < aDBs.length; i++) {
-      var sDbName = aDBs[i];
-
-      _getAllSchemasForDatabase(sHostName, sDbName, function(errDBs, resDBs) {
-
-        for (var j = 0; j < resDBs.items.length; j++) {
-          var item = resDBs.items[j];
-          var sDbName = item._name;
-          var sHostName = item["host.name"];
-          var aSchemaNames = item["database_schemas.name"];
-
-          for (var k = 0; k < aSchemaNames.length; k++) {
-            var sSchemaName = aSchemaNames[k];
-
-            schemasDiscovered.push(sHostName + "/" + sDbName + "/" + sSchemaName);
-
-            _getAllTablesAndColumnsForSchema(sHostName, sDbName, sSchemaName, function(errTbls, resTbls) {
-
-              schemasAdded.push(sDbName + "/" + sSchemaName);
-              for (var m = 0; m < resTbls.items.length; m++) {
-                var item = resTbls.items[m];
-                var sTblName = item._name;
-                var aColNames = item["database_columns.name"];
-                var sSchemaName = item["database_schema.name"];
-                var sDbName = item["database_schema.database.name"];
-                proj.addTable(sDbName, sSchemaName, sTblName, aColNames);
-              }
-
-              console.log("Discovered vs added (db): " + schemasDiscovered.length + ":" + tablesDiscovered.length + "/" + schemasAdded.length + ":" + tablesAdded.length);
-              if (schemasDiscovered.length == schemasAdded.length && tablesDiscovered.length == tablesAdded.length) {
-                console.log("Creating within (db)");
-                var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-                console.log(input);
-                _createOrUpdateProjectRequest(input, bCreate, callback);
-              }
-
-            });
-
-          }
-        }
-
-      });
-
-    }
-
-    // For any of the filters, we need to add objects based on a search
-    _addElementsByFilter(proj, projectParams.dbFilter, projectParams.schemaFilter, projectParams.tableFilter, schemasDiscovered, schemasAdded, tablesDiscovered, tablesAdded, function(err, projectUpdated, schemasDiscoveredUpdated, schemasAddedUpdated, tablesDiscoveredUpdated, tablesAddedUpdated) {
-
-//      var input = new xmldom.XMLSerializer().serializeToString(projectUpdated.getProjectDoc());
-//      console.log(input);
-//      _createOrUpdateProjectRequest(input, bCreate, callback);
-      console.log("Discovered vs added (filter): " + schemasDiscoveredUpdated.length + ":" + tablesDiscoveredUpdated.length + "/" + schemasAddedUpdated.length + ":" + tablesAddedUpdated.length);
-      if (schemasDiscoveredUpdated.length == schemasAddedUpdated.length && tablesDiscoveredUpdated.length == tablesAddedUpdated.length) {
-        var input = new xmldom.XMLSerializer().serializeToString(projectUpdated.getProjectDoc());
-        console.log(input);
-        _createOrUpdateProjectRequest(input, bCreate, callback);
-      }
-
-    });
-
-  } else if (assetType === "file") {
-
-    // TODO: handle file-based analysis
-
-  }
-
-}
- */
 
 /**
  * Get a list of Information Analyzer projects
@@ -1511,8 +1162,8 @@ exports.publishResultsForSources = function(projectName, aSources, callback) {
       console.error('headers: ', res.headers);
       throw new Error(err);
     }
-    callback(err, resExec);
-    return resExec;
+    callback(err, "successful");
+    return "successful";
   });
 
 }

@@ -105,9 +105,9 @@ iarest.getStaleAnalysisResults(projectName, staleBefore, function(err, aStaleSou
         if (status === "successful") {
   
           console.log("Publishing results...");
-          iarest.publishResultsForSources(projectName, aStaleSources, function(err, resPublish) {
+          iarest.publishResultsForSources(projectName, aStaleSources, function(err, statusPublish) {
         
-            console.log("  status: " + resPublish);
+            console.log("  status: " + statusPublish);
             console.log("Reindexing Solr for the thin client...");
             iarest.reindexThinClient(25, 100, false, true, function(err, resIndex) {
               console.log("  status: " + resIndex);
