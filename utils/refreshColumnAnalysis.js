@@ -17,14 +17,14 @@
  */
 
 /**
- * @file Execute column analysis
+ * @file Refresh the column analysis for any assets in the specified import area
  * @license Apache-2.0
  * @requires ibm-ia-rest
  * @requires progress
  * @requires yargs
  * @example
- * // executes column analysis for all tables and columns in the TESTSCH schema of the TESTDB database, using the "Automated Profiling" project (by default)
- * ./runColumnAnalysis.js -t database -o REPO -s TESTDB -l TESTSCH -d hostname:9445 -u isadmin -p isadmin
+ * // refreshes column analysis for all columns and file fields with results older than 48 hours, within the "Automated Profiling" project (by default)
+ * ./refreshColumnAnalysis.js -t 48 -d hostname:9445 -u isadmin -p isadmin
  */
 
 var iarest = require('ibm-ia-rest');
@@ -33,7 +33,7 @@ var ProgressBar = require('progress');
 // Command-line setup
 var yargs = require('yargs');
 var argv = yargs
-    .usage('Usage: $0 -n <name> -t <type> -o <host> -s <datasource> -l <location> -d <host>:<port> -u <user> -p <password>')
+    .usage('Usage: $0 -n <name> -t <timeInHours> -d <host>:<port> -u <user> -p <password>')
     .option('n', {
       alias: 'name',
       describe: 'Name of the Information Analyzer project',
@@ -41,24 +41,9 @@ var argv = yargs
       default: "Automated Profiling"
     })
     .option('t', {
-      alias: 'type',
-      describe: 'Type of source (database or file)',
-      demand: true, requiresArg: true, type: 'string'
-    })
-    .option('o', {
-      alias: 'host',
-      describe: 'Hostname of source',
-      demand: true, requiresArg: true, type: 'string'
-    })
-    .option('s', {
-      alias: 'source',
-      describe: 'Name of the datasource (database or connection)',
-      demand: true, requiresArg: true, type: 'string'
-    })
-    .option('l', {
-      alias: 'location',
-      describe: 'Name of the location (schema or directory path)',
-      demand: true, requiresArg: true, type: 'string'
+      alias: 'time',
+      describe: 'Re-run analysis on any assets without results published in the last T hours',
+      requiresArg: true, type: 'number'
     })
     .env('DS')
     .option('d', {
@@ -88,6 +73,14 @@ var host_port = argv.domain.split(":");
 iarest.setAuth(argv.deploymentUser, argv.deploymentUserPassword);
 iarest.setServer(host_port[0], host_port[1]);
 
+var projectName = argv.name;
+var lastRefreshTime = argv.time;
+var now = new Date();
+var staleBefore = new Date();
+if (lastRefreshTime !== undefined && lastRefreshTime !== "") {
+  staleBefore = staleBefore.setHours(now.getHours() - lastRefreshTime);
+}
+
 var bar = new ProgressBar('  analyzing [:bar] :percent  (:execId)', {
   complete: '=',
   incomplete: ' ',
@@ -95,38 +88,43 @@ var bar = new ProgressBar('  analyzing [:bar] :percent  (:execId)', {
   total: 100
 });
 
-console.log("Starting column analysis...");
-iarest.runColumnAnalysis(argv.name, argv.type, argv.host, argv.source, argv.location, function(err, results) {
+console.log("Determining stale analyses...");
+iarest.getStaleAnalysisResults(projectName, staleBefore, function(err, aStaleSources) {
 
-  var aIDs = iarest.getExecutionIDsFromResponse(results);
+  console.log("  running column analysis for " + aStaleSources.length + " sources.");
+  iarest.runColumnAnalysisForSources(projectName, aStaleSources, function(err, results) {
+
+    var aIDs = iarest.getExecutionIDsFromResponse(results);
   
-  for (var i = 0; i < aIDs.length; i++) {
-    var execId = aIDs[i];
-
-    var timer = setInterval(waitForCompletion, 10000, execId, function(status, resExec) {
-
-      clearInterval(timer);
-      if (status === "successful") {
-
-        console.log("Publishing results...");
-        iarest.publishResults(argv.name, argv.type, argv.host, argv.source, argv.location, function(err, resPublish) {
-      
-          console.log("  status: " + resPublish);
-          console.log("Reindexing Solr for the thin client...");
-          iarest.reindexThinClient(25, 100, false, true, function(err, resIndex) {
-            console.log("  status: " + resIndex);
+    for (var i = 0; i < aIDs.length; i++) {
+      var execId = aIDs[i];
+  
+      var timer = setInterval(waitForCompletion, 10000, execId, function(status, resExec) {
+  
+        clearInterval(timer);
+        if (status === "successful") {
+  
+          console.log("Publishing results...");
+          iarest.publishResultsForSources(projectName, aStaleSources, function(err, resPublish) {
+        
+            console.log("  status: " + resPublish);
+            console.log("Reindexing Solr for the thin client...");
+            iarest.reindexThinClient(25, 100, false, true, function(err, resIndex) {
+              console.log("  status: " + resIndex);
+            });
+  
           });
-
-        });
-
-      } else {
-        process.exit(1);
-      }
-
-    });
-
-  }
   
+        } else {
+          process.exit(1);
+        }
+  
+      });
+  
+    }
+
+  });
+
 });
 
 function waitForCompletion(id, callback) {  

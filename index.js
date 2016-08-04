@@ -43,6 +43,9 @@ var auth = "";
 var host = "";
 var port = "";
 
+const ignoreLabelName = "Information Analyzer Ignore List";
+const ignoreLabelDesc = "Information Analyzer should ignore any assets with this label; they should not be indexed.";
+
 /**
  * Set authentication details to access the REST API
  *
@@ -510,6 +513,12 @@ function _getAllDatabasesAndSchemasForHost(hostname, callback) {
           "property": "host.name",
           "operator": "=",
           "value": hostname
+        },
+        {
+          "property": "labels.name",
+          "operator": "=",
+          "value": ignoreLabelName,
+          "negated": true
         }
       ]
     }
@@ -546,6 +555,12 @@ function _getAllSchemasForDatabase(hostname, datasource, callback) {
           "property": "host.name",
           "operator": "=",
           "value": hostname
+        },
+        {
+          "property": "labels.name",
+          "operator": "=",
+          "value": ignoreLabelName,
+          "negated": true
         }
       ]
     }
@@ -566,7 +581,7 @@ function _getAllTablesAndColumnsForSchema(hostname, datasource, schema, updatedA
 
   var json = {
     "pageSize": "10000",
-    "properties": [ "name", "database_columns.name", "database_schema.name", "database_schema.database.name" ],
+    "properties": [ "name", "database_columns.name", "database_schema.name", "database_schema.database.name", "database_schema.database.host.name" ],
     "types": [ "database_table" ],
     "where":
     {
@@ -649,6 +664,53 @@ function _getAllColumnsForTable(hostname, datasource, schema, table, callback) {
 }
 
 /**
+ * Retrieves a list of all items that should be ignored, i.e. where they are labelled with "Information Analyzer Ignore List"
+ *
+ * @param {itemsToIgnoreCallback} callback
+ */
+exports.getAllItemsToIgnore = function(callback) {
+
+  // NOTE: the query below looks backwards with 'negated=false', but unfortunately only seems to work this way
+  var json = {
+    "pageSize": "10000",
+    "properties": [ "name" ],
+    "types": [ "host", "database", "database_schema", "database_table", "database_column", "data_file_folder", "data_file" ],
+    "where":
+    {
+      "operator": "and",
+      "conditions":
+      [
+        {
+          "property": "labels.name",
+          "operator": "=",
+          "value": ignoreLabelName,
+          "negated": false
+        }
+      ]
+    }
+  };
+
+  igcrest.search(json, function (err, resSearch) {
+    var typesToItems = {
+      "host": [],
+      "database": [],
+      "database_schema": [],
+      "database_table": [],
+      "database_column": [],
+      "data_file_folder": [],
+      "data_file": []
+    };
+    for (var i = 0; i < resSearch.items.length; i++) {
+      var item = resSearch.items[i];
+      var type = item._type;
+      typesToItems[type].push(igcrest.getItemIdentityString(item));
+    }
+    callback(err, typesToItems);
+  });
+
+}
+
+/**
  * @private
  */
 function _createOrUpdateProjectRequest(inputXML, bCreate, callback) {
@@ -664,6 +726,106 @@ function _createOrUpdateProjectRequest(inputXML, bCreate, callback) {
     callback(err, resCreate);
     return resCreate;
   });
+}
+
+/**
+ * @private
+ */
+function _createOrUpdateIgnoreList(callback) {
+
+  //var labelName = "Information Analyzer Ignore List";
+  //var labelDesc = "Information Analyzer should ignore any assets with this label; they should not be indexed.";
+  var queryLabelExistence = {
+    "properties": [ "name" ],
+    "types": [ "label" ],
+    "where":
+    {
+      "operator": "and",
+      "conditions":
+      [
+        {
+          "property": "name",
+          "operator": "=",
+          "value": ignoreLabelName
+        }
+      ]
+    }
+  };
+
+  igcrest.search(queryLabelExistence, function (err, resSearch) {
+  
+    var labelRID = "";
+    for (var i = 0; i < resSearch.items.length; i++) {
+      var item = resSearch.items[i];
+      if (item.hasOwnProperty("_id")) {
+        labelRID = item._id;
+      }
+    }
+
+    if (labelRID === "") {
+      igcrest.create('label', {'name': ignoreLabelName, 'description': ignoreLabelDesc}, function(res, labelRID) {
+        callback(labelRID);
+      });
+    } else {
+      callback(labelRID);
+    }
+  
+  });
+
+}
+
+/**
+ * Adds the IADB schema to a list of objects for Information Analyzer to ignore (to prevent them being added to projects or being analysed); this is accomplished by creating a label 'InformationAnalyzer'
+ */
+exports.addIADBToIgnoreList = function(callback) {
+  
+  exports.makeRequest('GET', "/ibm/iis/ia/api/getIADBParams", null, function(res, resJSON) {
+    var err = null;
+    if (res.statusCode != 200) {
+      err = "Unsuccessful request " + res.statusCode;
+      console.error(err);
+      console.error('headers: ', res.headers);
+      throw new Error(err);
+    }
+
+    resJSON = JSON.parse(resJSON);
+    var iadbSchema = resJSON.dataConnection;
+    var findIADB = {
+      "properties": [ "name", "imports_database" ],
+      "types": [ "data_connection" ],
+      "where":
+      {
+        "operator": "and",
+        "conditions":
+        [
+          {
+            "property": "name",
+            "operator": "=",
+            "value": iadbSchema
+          }
+        ]
+      }
+    };
+
+    _createOrUpdateIgnoreList(function(labelRID) {
+
+      igcrest.search(findIADB, function(err, resSearch) {
+        if (resSearch.items.length > 0) {
+          var item = resSearch.items[0];
+          var iadbRID = item.imports_database._id;
+          igcrest.update(iadbRID, {'labels': labelRID}, function(err, resUpdate) {
+            callback(err, resUpdate);
+          });
+        } else {
+          callback("Unable to find IADB", resSearch);
+        }
+
+      });
+
+    });
+  
+  });
+
 }
 
 /**
@@ -692,58 +854,84 @@ exports.createOrUpdateAnalysisProject = function(name, description, type, update
       console.log("Project found, updating...");
     }
 
-    if (type === "database") {
+    exports.getAllItemsToIgnore(function(errIgnore, typesToIgnoreItems) {
+
+      if (type === "database") {
   
-      _getAllHostsWithDatabases(function(errHosts, resHosts) {
-  
-        for (var i = 0; i < resHosts.length; i++) {
-          
-          var sHostName = resHosts[i];
-          _getAllDatabasesAndSchemasForHost(sHostName, function(errDBs, resDBs) {
-  
-            for (var j = 0; j < resDBs.items.length; j++) {
-              var item = resDBs.items[j];
-              var sDbName = item._name;
-              var sHostName = item["host.name"];
-              var aSchemaNames = item["database_schemas.name"];
-  
-              for (var k = 0; k < aSchemaNames.length; k++) {
-                var sSchemaName = aSchemaNames[k];
-                schemasDiscovered.push(sHostName + "/" + sDbName + "/" + sSchemaName);
-  
-                _getAllTablesAndColumnsForSchema(sHostName, sDbName, sSchemaName, updatedAfter, function(errTbls, resTbls) {
-  
-                  schemasAdded.push(sDbName + "/" + sSchemaName);
-                  for (var m = 0; m < resTbls.items.length; m++) {
-                    var item = resTbls.items[m];
-                    var sTblName = item._name;
-                    var aColNames = item["database_columns.name"];
-                    var sSchemaName = item["database_schema.name"];
-                    var sDbName = item["database_schema.database.name"];
-                    proj.addTable(sDbName, sSchemaName, sTblName, aColNames);
-                  }
-  
-                  if (schemasDiscovered.length == schemasAdded.length) {
-                    var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-                    _createOrUpdateProjectRequest(input, bCreate, callback);
-                  }
-  
-                });
-  
-              }
-            }
-  
-          });
-  
-        }
-  
-      });
+        _getAllHostsWithDatabases(function(errHosts, resHosts) {
     
-    } else if (type === "file") {
-  
-      // TODO: handle file-based analysis
-  
-    }
+          for (var i = 0; i < resHosts.length; i++) {
+            
+            var sHostName = resHosts[i];
+            if (typesToIgnoreItems.host.indexOf(sHostName) == -1) {
+
+              _getAllDatabasesAndSchemasForHost(sHostName, function(errDBs, resDBs) {
+      
+                for (var j = 0; j < resDBs.items.length; j++) {
+                  var item = resDBs.items[j];
+                  var sDbName = item._name;
+                  var sHostName = item["host.name"];
+                  var aSchemaNames = item["database_schemas.name"];
+
+                  if (typesToIgnoreItems.database.indexOf(sHostName + "::" + sDbName) == -1) {
+      
+                    for (var k = 0; k < aSchemaNames.length; k++) {
+                      var sSchemaName = aSchemaNames[k];
+
+                      if (typesToIgnoreItems.database_schema.indexOf(sHostName + "::" + sDbName + "::" + sSchemaName) == -1) {
+                        schemasDiscovered.push(sHostName + "::" + sDbName + "::" + sSchemaName);
+          
+                        _getAllTablesAndColumnsForSchema(sHostName, sDbName, sSchemaName, updatedAfter, function(errTbls, resTbls) {
+          
+                          schemasAdded.push(sDbName + "::" + sSchemaName);
+                          for (var m = 0; m < resTbls.items.length; m++) {
+                            var item = resTbls.items[m];
+                            var sTblName = item._name;
+                            var aColNames = item["database_columns.name"];
+                            var sSchemaName = item["database_schema.name"];
+                            var sDbName = item["database_schema.database.name"];
+                            var sHostName = item["database_schema.database.host.name"];
+                            if (typesToIgnoreItems.database_table.indexOf(sHostName + "::" + sDbName + "::" + sSchemaName + "::" + sTblName) == -1) {
+                              proj.addTable(sDbName, sSchemaName, sTblName, aColNames);
+                            } else {
+                              console.warn("  ignoring, based on label: " + sHostName + "::" + sDbName + "::" + sSchemaName + "::" + sTblName);
+                            }
+                          }
+          
+                          if (schemasDiscovered.length == schemasAdded.length) {
+                            var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
+                            _createOrUpdateProjectRequest(input, bCreate, callback);
+                          }
+          
+                        });
+          
+                      } else {
+                        console.warn("  ignoring, based on label: " + sHostName + "::" + sDbName + "::" + sSchemaName);
+                      }
+                    }
+
+                  } else {
+                    console.warn("  ignoring, based on label: " + sHostName + "::" + sDbName);
+                  }
+                }
+      
+              });
+
+            } else {
+              console.warn("  ignoring, based on label: " + sHostName);
+            }
+    
+          }
+    
+        });
+      
+      } else if (type === "file") {
+    
+        // TODO: handle file-based analysis
+    
+      }
+
+    });
 
   });
 
@@ -1111,7 +1299,7 @@ exports.getProjectList = function(callback) {
  */
 exports.getProjectDataSourceList = function(projectName, bByColumn, callback) {
 
-  this.makeRequest('GET', "/ibm/iis/ia/api/project?projectName=" + projectName, null, function(res, resXML) {
+  this.makeRequest('GET', encodeURI("/ibm/iis/ia/api/project?projectName=" + projectName), null, function(res, resXML) {
     
     var err = null;
     if (res.statusCode != 200) {
@@ -1123,42 +1311,50 @@ exports.getProjectDataSourceList = function(projectName, bByColumn, callback) {
 
     var aDSs = [];
     var resDoc = new xmldom.DOMParser().parseFromString(resXML);
+
     var nlDS = xpath.select("//*[local-name(.)='DataSource']", resDoc);
     
     for (var i = 0; i < nlDS.length; i++) {
 
-      var dataSourceName = nlDS[i].getAttribute("name");
+      var nDataSource = nlDS[i];
+      var dataSourceName = nDataSource.getAttribute("name");
       
-      var nlSchemas = xpath.select("//*[local-name(.)='Schema']", nlDS[i]);
+      var nlSchemas = nDataSource.getElementsByTagName("Schema");
       for (var j = 0; j < nlSchemas.length; j++) {
-        var schemaName = nlSchemas[j].getAttribute("name");
+        var nSchema = nlSchemas.item(j);
+        var schemaName = nSchema.getAttribute("name");
         if (!bByColumn) {
           aDSs.push(dataSourceName + "." + schemaName + ".*.*");
         } else {
-          var nlTables = xpath.select("//*[local-name(.)='Table']", nlSchemas[j]);
+          var nlTables = nSchema.getElementsByTagName("Table");
           for (var k = 0; k < nlTables.length; k++) {
-            var tableName = nlTables[k].getAttribute("name");
-            var nlCols = xpath.select("//*[local-name(.)='Column']", nlTables[k]);
+            var nTable = nlTables.item(k);
+            var tableName = nTable.getAttribute("name");
+            var nlCols = nTable.getElementsByTagName("Column");
             for (var l = 0; l < nlCols.length; l++) {
-              var columnName = nlCols[l].getAttribute("name");
+              var nColumn = nlCols.item(l);
+              var columnName = nColumn.getAttribute("name");
               aDSs.push(dataSourceName + "." + schemaName + "." + tableName + "." + columnName);
             }
           }
         }
       }
 
-      var nlFileFolders = xpath.select("//*[local-name(.)='FileFolder']", nlDS[i]);
+      var nlFileFolders = nDataSource.getElementsByTagName("FileFolder");
       for (var j = 0; j < nlFileFolders.length; j++) {
-        var folderName = nlFileFolders[j].getAttribute("name");
+        var nFolder = nlFileFolders.item(j);
+        var folderName = nFolder.getAttribute("name");
         if (!bByColumn) {
           aDSs.push(dataSourceName + ":" + folderName + ":*:*");
         } else {
-          var nlFiles = xpath.select("//*[local-name(.)='FileName']", nlFileFolders[j]);
+          var nlFiles = nFolder.getElementsByTagName("FileName");
           for (var k = 0; k < nlFiles.length; k++) {
-            var fileName = nlFiles[k].getAttribute("name");
-            var nlCols = xpath.select("//*[local-name(.)='Column']", nlFiles[k]);
+            var nFile = nlFiles.item(k);
+            var fileName = nFile.getAttribute("name");
+            var nlCols = nFile.getElementsByTagName("Column");
             for (var l = 0; l < nlCols.length; l++) {
-              var columnName = nlCols[l].getAttribute("name");
+              var nColumn = nlCols.item(l);
+              var columnName = nColumn.getAttribute("name");
               aDSs.push(dataSourceName + ":" + folderName + ":" + fileName + ":" + columnName);
             }
           }
@@ -1210,6 +1406,44 @@ exports.runColumnAnalysis = function(projectName, type, hostname, datasource, lo
 }
 
 /**
+ * Run a full column analysis against the list of data sources specificed
+ *
+ * @param {string} projectName - name of the IA project
+ * @param {string[]} aSources - an array of qualified data source names (DB.SCHEMA.TABLE for databases, HOST:PATH:FILENAME for files)
+ * @param {requestCallback} callback - callback that handles the response
+ */
+exports.runColumnAnalysisForSources = function(projectName, aSources, callback) {
+
+  var proj = new Project(projectName);
+  var ca = new ColumnAnalysis(proj, true, "CAPTURE_ALL", 5000, 10000, true);
+
+  for (var i = 0; i < aSources.length; i++) {
+    var sSourceName = aSources[i];
+    if (sSourceName.indexOf(":") > -1) {
+      var aTokens = sSourceName.split(":");
+      ca.addFileField(aTokens[0], aTokens[1], aTokens[2], "*");
+    } else if (sSourceName.indexOf(".") > -1) {
+      var aTokens = sSourceName.split(".");
+      ca.addColumn(aTokens[0], aTokens[1], aTokens[2], "*");
+    }
+  }
+
+  var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
+  exports.makeRequest('POST', "/ibm/iis/ia/api/executeTasks", input, function(res, resExec) {
+    var err = null;
+    if (res.statusCode != 200) {
+      err = "Unsuccessful request " + res.statusCode;
+      console.error(err);
+      console.error('headers: ', res.headers);
+      throw new Error(err);
+    }
+    callback(err, resExec);
+    return resExec;
+  });
+
+}
+
+/**
  * Publish analysis results
  *
  * @param {string} projectName - name of the IA project
@@ -1241,6 +1475,158 @@ exports.publishResults = function(projectName, type, hostname, datasource, locat
     }
     callback(err, resExec);
     return resExec;
+  });
+
+}
+
+/**
+ * Publish analysis results for the list of data sources specificed
+ *
+ * @param {string} projectName - name of the IA project
+ * @param {string[]} aSources - an array of qualified data source names (DB.SCHEMA.TABLE for databases, HOST:PATH:FILENAME for files)
+ * @param {requestCallback} callback - callback that handles the response
+ */
+exports.publishResultsForSources = function(projectName, aSources, callback) {
+
+  var proj = new Project(projectName);
+  var pr = new PublishResults(proj);
+
+  for (var i = 0; i < aSources.length; i++) {
+    var sSourceName = aSources[i];
+    if (sSourceName.indexOf(":") > -1) {
+      var aTokens = sSourceName.split(":");
+      pr.addFile(aTokens[0], aTokens[1], aTokens[2], null);
+    } else if (sSourceName.indexOf(".") > -1) {
+      var aTokens = sSourceName.split(".");
+      pr.addTable(aTokens[0], aTokens[1], aTokens[2], null);
+    }
+  }
+
+  var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
+  exports.makeRequest('POST', "/ibm/iis/ia/api/publishResults", input, function(res, resExec) {
+    var err = null;
+    if (res.statusCode != 200) {
+      err = "Unsuccessful request " + res.statusCode;
+      console.error(err);
+      console.error('headers: ', res.headers);
+      throw new Error(err);
+    }
+    callback(err, resExec);
+    return resExec;
+  });
+
+}
+
+/**
+ * Retrieve previously published analysis results
+ *
+ * @param {string} projectName - name of the IA project
+ * @param {Date} timeToConsiderStale - the time before which any analysis results should be considered stale
+ * @param {requestCallback} callback - callback that handles the response
+ */
+exports.getStaleAnalysisResults = function(projectName, timeToConsiderStale, callback) {
+
+  // Get a list of all project data sources (everything we should check for staleness)
+  exports.getProjectDataSourceList(projectName, true, function (err, aDataSources) {
+
+    var project = new Project(projectName);
+    var projectTables = {};
+    var projectFiles = {};
+    for (var i = 0; i < aDataSources.length; i++) {
+      var sDataSource = aDataSources[i];
+      if (sDataSource.indexOf(":") > -1) {
+        sDataSource = sDataSource.substring(0, sDataSource.lastIndexOf(":"));
+        projectFiles[sDataSource] = true;
+      } else if (sDataSource.indexOf(".") > -1) {
+        sDataSource = sDataSource.substring(0, sDataSource.lastIndexOf("."));
+        projectTables[sDataSource] = true;
+      }
+    }
+
+    // Get a list of objects from IGC that are stale in general (this should be faster at-scale than generally)
+    // querying every single one of the data sources above
+    // NOTE: it is necessary to do this at table / file level, as the lower level does not allow retrieving contextual information (full identity)
+    var staleTables = {
+      "pageSize": "1000000",
+      "properties": [ "name", "modified_on", "database_table_or_view.name", "database_table_or_view.database_schema.name", "database_table_or_view.database_schema.database.name", "database_table_or_view.database_schema.database.host.name" ],
+      "types": [ "table_analysis" ]
+    };
+
+    igcrest.search(staleTables, function (err, resSearch) {
+
+      var aTablesToAnalyze = [];
+
+      // Build up a list of any tables with analysis results, so we can compare against project tables  
+      var tablesWithAnalysisResults = {};
+      for (var i = 0; i < resSearch.items.length; i++) {
+        var item = resSearch.items[i];
+        var sTblAnalysisName = item._name;
+        var sHostName = item["database_table_or_view.database_schema.database.host.name"];
+        var sDbName = item["database_table_or_view.database_schema.database.name"];
+        var sSchemaName = item["database_table_or_view.database_schema.name"];
+        var sTblName = item["database_table_or_view.name"];
+        var dModified = new Date(item["modified_on"]);
+        var qualifiedName = sDbName + "." + sSchemaName + "." + sTblName;
+        if (tablesWithAnalysisResults.hasOwnProperty(qualifiedName)) {
+          // Find the most recent analysis result, in case there are multiple
+          var lastTime = tablesWithAnalysisResults[qualifiedName];
+          if (lastTime < dModified) {
+            tablesWithAnalysisResults[qualifiedName] = dModified;
+          }
+        } else {
+          tablesWithAnalysisResults[qualifiedName] = dModified;
+        }
+      }
+
+      for (var key in projectTables) {
+        if (projectTables.hasOwnProperty(key)) {
+          // If there is no analysis result, it has never been analyzed -- add it
+          if (!tablesWithAnalysisResults.hasOwnProperty(key)) {
+            aTablesToAnalyze.push(key);
+          } else {
+            // Otherwise, check the date of the last analysis
+            var lastAnalysis = tablesWithAnalysisResults[key];
+            if (lastAnalysis <= timeToConsiderStale) {
+              aTablesToAnalyze.push(key);
+            }
+          }
+        }
+      }
+
+      callback(err, aTablesToAnalyze);
+
+    });
+
+// TODO: handle files
+/*
+    var staleFileFields = {
+      "pageSize": "10000",
+      "properties": [ "name", "data_file_record.name", "data_file_record.data_file.path", "data_file_record.data_file.host.name" ],
+      "types": [ "file_record_analysis" ],
+      "where":
+      {
+        "operator": "and",
+        "conditions":
+        [
+          {
+            "property": "modified_on",
+            "operator": "<=",
+            "value": timeToConsiderStale.valueOf()
+          }
+        ]
+      }
+    };
+
+    console.log("Searching fields: " + JSON.stringify(staleFileFields));
+    igcrest.search(staleFileFields, function (err, resSearch) {
+  
+      console.log(JSON.stringify(resSearch));
+      callback(err, resSearch);
+
+    });
+*/
+    // Compare the two lists -- any overlap will be our results
+
   });
 
 }
@@ -1352,3 +1738,10 @@ exports.reindexThinClient = function(batchSize, solrBatchSize, upgrade, force, c
  * @param {string} errorMessage - any error message, or null if no errors
  * @param {string} status - the status of the reindex operation ["REINDEX_SUCCESSFUL"]
  */
+
+ /**
+  * This callback is invoked as the result of retrieving a list of items that Information Analyzer should ignore
+  * @callback itemsToIgnoreCallback
+  * @param {string} errorMessage - any error message, or null if no errors
+  * @param {Object} typeToIdentities - dictionary keyed by object type, with each value being an array of objects of that type to ignore (as identity strings, /-delimited)
+  */

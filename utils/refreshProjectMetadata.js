@@ -92,11 +92,11 @@ if (lastRefreshTime !== undefined && lastRefreshTime !== "") {
   addAfter = addAfter.setHours(now.getHours() - lastRefreshTime);
 }
 
-iarest.getProjectList(function(err, resList) {
-
-  // TODO: replace database hard-coding (shouldn't be based on a pre-defined type at all, just timestamp?)
-  iarest.createOrUpdateAnalysisProject(prjName, prjDesc, "database", addAfter, function(err, results) {
-    console.log(results);
+iarest.addIADBToIgnoreList(function(err, resIgnore) {
+  iarest.getProjectList(function(err, resList) {
+    // TODO: replace database hard-coding (shouldn't be based on a pre-defined type at all, just timestamp?)
+    iarest.createOrUpdateAnalysisProject(prjName, prjDesc, "database", addAfter, function(err, results) {
+      console.log(results);
+    });
   });
-
 });
