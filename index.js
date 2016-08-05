@@ -158,6 +158,44 @@ Project.prototype = {
       eT.appendChild(eC);
     }
 
+  },
+
+  /**
+   * Add the specified file to the project
+   *
+   * @function
+   * @param {string} datasource - the host name?
+   * @param {string} folder - the full path to the file
+   * @param {string} file - the name of the file
+   * @param {string[]} aFields - array of field names within the file
+   */
+  addFile: function(datasource, folder, file, aFields) {
+
+    var nDS = this.doc.getElementsByTagName("DataSources");
+    if (nDS.length == 0) {
+      nDS = this.doc.createElement("DataSources");
+      this.doc.documentElement.appendChild(nDS);
+    } else {
+      nDS = nDS[0];
+    }
+
+    var eDS = this.doc.createElement("DataSource");
+    eDS.setAttribute("name", datasource);
+    nDS.appendChild(eDS);
+    var eFolder = this.doc.createElement("FileFolder");
+    eFolder.setAttribute("name", folder);
+    eDS.appendChild(eFolder);
+    var eFile = this.doc.createElement("FileName");
+    eFile.setAttribute("name", file);
+    eFolder.appendChild(eFile);
+
+    for (var i = 0; i < aFields.length; i++) {
+      var sFieldName = aFields[i];
+      var eField = this.doc.createElement("Column");
+      eField.setAttribute("name", sFieldName);
+      eFile.appendChild(eField);
+    }
+
   }
 
 };
@@ -507,6 +545,146 @@ function _getAllHostsWithDatabases(callback) {
 /**
  * @private
  */
+function _getAllHostsWithFiles(callback) {
+
+  var json = {
+    "pageSize": "10000",
+    "properties": [ "name" ],
+    "types": [ "host" ],
+    "where":
+    {
+      "operator": "and",
+      "conditions":
+      [
+        {
+          "property": "data_file_folders",
+          "operator": "isNull",
+          "negated": true
+        },
+        {
+          "property": "labels.name",
+          "operator": "=",
+          "value": ignoreLabelName,
+          "negated": true
+        }
+      ]
+    }
+  }
+
+  igcrest.search(json, function (err, resSearch) {
+
+    var toReturn = [];
+    for (var i = 0; i < resSearch.items.length; i++) {
+      var item = resSearch.items[i];
+      var sHostName = item._name;
+      toReturn.push(sHostName);
+    }
+    callback(err, toReturn);
+
+  });
+
+}
+
+/**
+ * @private
+ */
+function _getAllFoldersAndFilesForHost(hostname, callback) {
+
+  var json = {
+    "pageSize": "10000",
+    "properties": [ "name", "data_files", "host.name" ],
+    "types": [ "data_file_folder" ],
+    "where":
+    {
+      "operator": "and",
+      "conditions":
+      [
+        {
+          "property": "host.name",
+          "operator": "=",
+          "value": hostname
+        },
+        {
+          "property": "labels.name",
+          "operator": "=",
+          "value": ignoreLabelName,
+          "negated": true
+        }
+      ]
+    }
+  };
+
+  igcrest.search(json, function (err, resSearch) {
+
+    /*var foldersToFiles = {};
+    for (var i = 0; i < resSearch.items.length; i++) {
+      var item = resSearch.items[i];
+      var folderPath = igcrest.getItemIdentityString(item);
+      if (!foldersToFiles.hasOwnProperty(folderPath)) {
+        foldersToFiles[folderPath] = [];
+      }
+      var aFiles = item.data_files;
+      for (var j = 0; j < aFiles.length; j++) {
+        var fileItem = aFiles[j];
+        foldersToFiles[folderPath].push(fileItem._name);
+      }
+    }
+    callback(err, foldersToFiles);*/
+    callback(err, resSearch);
+
+  });
+
+}
+
+/**
+ * @private
+ */
+function _getAllFieldNamesForFile(fileRID, callback) {
+
+  var json = {
+    "pageSize": "10000",
+    "properties": [ "name", "data_file_fields" ],
+    "types": [ "data_file_record" ],
+    "where":
+    {
+      "operator": "and",
+      "conditions":
+      [
+        {
+          "property": "data_file",
+          "operator": "=",
+          "value": fileRID
+        },
+        {
+          "property": "labels.name",
+          "operator": "=",
+          "value": ignoreLabelName,
+          "negated": true
+        }
+      ]
+    }
+  };
+
+  igcrest.search(json, function (err, resSearch) {
+    var fieldList = {};
+    for (var i = 0; i < resSearch.items.length; i++) {
+      var item = resSearch.items[i];
+      fieldList.id = igcrest.getItemIdentityString(item);
+      fieldList.fields = [];
+      var fields = item.data_file_fields.items;
+      for (var j = 0; j < fields.length; j++) {
+        var fieldName = fields[j]._name;
+        fieldList.fields.push(fieldName);
+      }
+    }
+    callback(err, fieldList);
+  });
+
+}
+
+/**
+ * @private
+ */
 function _getAllDatabasesAndSchemasForHost(hostname, callback) {
 
   var json = {
@@ -833,7 +1011,7 @@ exports.createOrUpdateAnalysisProject = function(name, description, type, update
 
     exports.getAllItemsToIgnore(function(errIgnore, typesToIgnoreItems) {
 
-      if (type === "database") {
+//      if (type === "database") {
   
         _getAllHostsWithDatabases(function(errHosts, resHosts) {
     
@@ -877,6 +1055,7 @@ exports.createOrUpdateAnalysisProject = function(name, description, type, update
           
                           if (schemasDiscovered.length == schemasAdded.length) {
                             var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
+                            console.log("Input (dbs): " + input);
                             _createOrUpdateProjectRequest(input, bCreate, callback);
                           }
           
@@ -902,11 +1081,77 @@ exports.createOrUpdateAnalysisProject = function(name, description, type, update
     
         });
       
-      } else if (type === "file") {
+//      } else if (type === "file") {
+
+        _getAllHostsWithFiles(function(errHosts, resHosts) {
+
+          for (var i = 0; i < resHosts.length; i++) {
+
+            var sHostName = resHosts[i];
+            if (typesToIgnoreItems.host.indexOf(sHostName) == -1) {
+
+              _getAllFoldersAndFilesForHost(sHostName, function(errFiles, resFolders) {
+
+                var foldersToFiles = {};
+                for (var i = 0; i < resFolders.items.length; i++) {
+                  var item = resFolders.items[i];
+                  var folderPath = igcrest.getItemIdentityString(item);
+
+                  if (typesToIgnoreItems.data_file_folder.indexOf(folderPath) == -1) {
+
+                    var aFiles = item.data_files.items;
+                    for (var j = 0; j < aFiles.length; j++) {
+                      var fileItem = aFiles[j];
+                      var fileRID = fileItem._id;
+                      var fileName = fileItem._name;
+
+                      if (typesToIgnoreItems.data_file.indexOf(folderPath + "::" + fileName) == -1) {
+
+                        schemasDiscovered.push(folderPath + "::" + fileName);
+                        var sHostName = folderPath.substring(0, folderPath.indexOf("::"));
+                        var sFolderPath = folderPath.substring(folderPath.indexOf("::") + 2);
+
+                        _getAllFieldNamesForFile(fileRID, function(err, fieldList) {
+                          var identity = fieldList.id;
+                          schemasAdded.push(identity);
+                          var sHostName = identity.substring(0, identity.indexOf("::"));
+                          var sFileRecord = identity.substring(identity.lastIndexOf("::") + 2);
+                          var sFolderPath = identity.substring(identity.indexOf("::") + 2, identity.lastIndexOf("::"));
+                          var fileName = sFolderPath.substring(sFolderPath.lastIndexOf("::") + 2);
+                          sFolderPath = sFolderPath.substring(0, sFolderPath.lastIndexOf("::")).replace(new RegExp("::", 'g'), "/");
+                          if (sFolderPath.startsWith("//")) {
+                            sFolderPath = sFolderPath.substring(1);
+                          }
+                          proj.addFile(sHostName, sFolderPath, fileName, fieldList.fields);
+
+                          if (schemasDiscovered.length == schemasAdded.length) {
+                            var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
+                            console.log("Input (files): " + input);
+                            _createOrUpdateProjectRequest(input, bCreate, callback);
+                          }
+                        });
+
+                      } else {
+                        console.warn("  ignoring, based on label: " + folderPath + "::" + fileName);
+                      }
+                    }
+
+                  } else {
+                    console.warn("  ignoring, based on label: " + folderPath);
+                  }
+                }
+
+              });
+
+            } else {
+              console.warn("  ignoring, based on label: " + sHostName);
+            }
+
+          }
+
+        });
     
-        // TODO: handle file-based analysis
-    
-      }
+//      }
 
     });
 
