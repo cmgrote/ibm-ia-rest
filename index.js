@@ -448,12 +448,14 @@ if (typeof require == 'function') {
  * @param {string} method - type of request, one of ['GET', 'PUT', 'POST', 'DELETE']
  * @param {string} path - the path to the end-point (e.g. /ibm/iis/ia/api/...)
  * @param {string} [input] - any input for the request, i.e. for PUT, POST
+ * @param {string} [inputType] - the type of input, if any provided ['text/xml', 'application/json']
  * @param {requestCallback} callback - callback that handles the response
  * @throws will throw an error if connectivity details are incomplete or there is a fatal error during the request
  */
-exports.makeRequest = function(method, path, input, callback) {
+exports.makeRequest = function(method, path, input, inputType, callback) {
 
   var bInput = (typeof input !== 'undefined' && input !== null);
+  input = (inputType === 'application/json' ? JSON.stringify(input) : input);
   
   if (this.auth == "" || this.host == "" || this.port == "") {
     throw new Error("Setup incomplete: auth = " + this.auth + ", host = " + this.host + ", port = " + this.port + ".");
@@ -471,7 +473,7 @@ exports.makeRequest = function(method, path, input, callback) {
   }
   if (bInput) {
     opts.headers = {
-      'Content-Type': 'text/xml',
+      'Content-Type': inputType,
       'Content-Length': input.length
     }
   }
@@ -585,6 +587,45 @@ function _getAllHostsWithFiles(callback) {
 
 }
 
+function _getLocalFileConnectorForHost(hostname, callback) {
+
+  var json = {
+    "pageSize": "10000",
+    "properties": [ "name", "data_connectors.type" ],
+    "types": [ "data_connection" ],
+    "where":
+    {
+      "operator": "and",
+      "conditions":
+      [
+        {
+          "property": "data_connectors.host.name",
+          "operator": "=",
+          "value": hostname
+        },
+        {
+          "property": "data_connectors.type",
+          "operator": "=",
+          "value": "LocalFileConnector"
+        }
+      ]
+    }
+  };
+
+  igcrest.search(json, function (err, resSearch) {
+
+    var dcnRID = "";
+    if (resSearch.items.length > 0) {
+      var takeTheFirst = resSearch.items[0];
+      dcnRID = takeTheFirst._id;
+    }
+    callback(err, dcnRID);
+    return dcnRID;
+
+  });
+
+}
+
 /**
  * @private
  */
@@ -616,20 +657,6 @@ function _getAllFoldersAndFilesForHost(hostname, callback) {
 
   igcrest.search(json, function (err, resSearch) {
 
-    /*var foldersToFiles = {};
-    for (var i = 0; i < resSearch.items.length; i++) {
-      var item = resSearch.items[i];
-      var folderPath = igcrest.getItemIdentityString(item);
-      if (!foldersToFiles.hasOwnProperty(folderPath)) {
-        foldersToFiles[folderPath] = [];
-      }
-      var aFiles = item.data_files;
-      for (var j = 0; j < aFiles.length; j++) {
-        var fileItem = aFiles[j];
-        foldersToFiles[folderPath].push(fileItem._name);
-      }
-    }
-    callback(err, foldersToFiles);*/
     callback(err, resSearch);
 
   });
@@ -639,7 +666,7 @@ function _getAllFoldersAndFilesForHost(hostname, callback) {
 /**
  * @private
  */
-function _getAllFieldNamesForFile(fileRID, callback) {
+function _getAllFieldNamesForFile(fileRID, updatedAfter, callback) {
 
   var json = {
     "pageSize": "10000",
@@ -664,6 +691,15 @@ function _getAllFieldNamesForFile(fileRID, callback) {
       ]
     }
   };
+
+  if (updatedAfter !== undefined && updatedAfter !== "") {
+    json.where.conditions.push({
+      "property": "modified_on",
+      "operator": ">=",
+      "value": updatedAfter.valueOf()
+    });
+  }
+
 
   igcrest.search(json, function (err, resSearch) {
     var fieldList = {};
@@ -868,7 +904,7 @@ exports.getAllItemsToIgnore = function(callback) {
  */
 function _createOrUpdateProjectRequest(inputXML, bCreate, callback) {
   var endpoint = (bCreate) ? "/ibm/iis/ia/api/create" : "/ibm/iis/ia/api/update"
-  exports.makeRequest('POST', endpoint, inputXML, function(res, resCreate) {
+  exports.makeRequest('POST', endpoint, inputXML, 'text/xml', function(res, resCreate) {
     var err = null;
     if (res.statusCode != 200) {
       err = "Unsuccessful request " + res.statusCode;
@@ -878,6 +914,131 @@ function _createOrUpdateProjectRequest(inputXML, bCreate, callback) {
     }
     callback(err, resCreate);
     return resCreate;
+  });
+}
+
+/**
+ * @private
+ */
+function _prepFilesArray(aFiles) {
+
+  var fileList = "";
+  for (var i = 0; i < aFiles.length; i++) {
+    var file = aFiles[i];
+    if (file.endsWith("/")) {
+      fileList = fileList + ";folder[" + file + "]";
+    } else {
+      fileList = fileList + ";file[" + file + "]";
+    }
+  }
+  if (fileList.length > 0) {
+    fileList = fileList.substring(1);
+  }
+  return fileList;
+
+}
+
+/**
+ * @private
+ */
+// NOTE: this uses an internal / unpublished "DA REST API" -- subject to change without notice...
+// (discovered using Firebug to look at all communication in the IATC)
+function _addFilesToProject(dcnRID, projectRID, aFileList, callback) {
+  
+  var getHostnameJSON = {
+    "pageSize": "5",
+    "properties": [ "name", "data_connectors.host.name" ],
+    "types": [ "data_connection" ],
+    "where":
+    {
+      "operator": "and",
+      "conditions":
+      [
+        {
+          "property": "_id",
+          "operator": "=",
+          "value": dcnRID
+        }
+      ]
+    }
+  };
+
+  igcrest.search(getHostnameJSON, function (err, resSearch) {
+
+    if (resSearch.items.length > 0) {
+      var sHostName = resSearch.items[0]["data_connectors.host.name"];
+
+      var fileList = _prepFilesArray(aFileList);
+      var endpoint = "/ibm/iis/dq/da/rest/v1/catalog/dataSets/doRegisterAndAddToWorkspaces"
+      // TODO: Need to get a record / row delimiter added that actually works...
+      var addFilesJSON = {
+        "properties": {
+          "registrationParameters": {
+            "Identity_HostSystem": sHostName,
+            "DataConnection": dcnRID,
+            "ImportFileStructure": "true",
+            "IgnoreAccessError": "false",
+            "DirectoryContents": fileList
+          },
+          "connectionParameters": {},
+          "formattingParameters": "record_delim='\\n',delim=',',header='true',charset='UTF-8'"
+        },
+        "options": {
+          "workspaces": [
+          {
+            "rid": projectRID
+          }]
+        }
+      };
+
+      exports.makeRequest('POST', endpoint, addFilesJSON, 'application/json', function(res, resUpdate) {
+        var err = null;
+        if (res.statusCode != 200) {
+          err = "Unsuccessful request " + res.statusCode;
+          console.error(err);
+          console.error("headers: ", res.headers);
+          throw new Error(err);
+        }
+        callback(err, "successful");
+        return "successful";
+      });
+
+    }
+
+  });
+
+  
+
+}
+
+/**
+ * @private
+ */
+function _getProjectRID(projectDescription, callback) {
+  var json = {
+    "pageSize": "5",
+    "properties": [ "short_description" ],
+    "types": [ "analysis_project" ],
+    "where":
+    {
+      "operator": "and",
+      "conditions":
+      [
+        {
+          "property": "short_description",
+          "operator": "=",
+          "value": projectDescription
+        }
+      ]
+    }
+  };
+  igcrest.search(json, function (err, resSearch) {
+    var projectRID = "";
+    if (resSearch.items.length > 0) {
+      projectRID = resSearch.items[0]._id;
+    }
+    callback(err, projectRID);
+    return projectRID;
   });
 }
 
@@ -934,7 +1095,7 @@ function _createOrUpdateIgnoreList(callback) {
  */
 exports.addIADBToIgnoreList = function(callback) {
   
-  exports.makeRequest('GET', "/ibm/iis/ia/api/getIADBParams", null, function(res, resJSON) {
+  exports.makeRequest('GET', "/ibm/iis/ia/api/getIADBParams", null, null, function(res, resJSON) {
     var err = null;
     if (res.statusCode != 200) {
       err = "Unsuccessful request " + res.statusCode;
@@ -984,18 +1145,18 @@ exports.addIADBToIgnoreList = function(callback) {
 }
 
 /**
- * Create or update an analysis project, to include ALL objects of the specified type known to IGC that were updated after the date received -- necessary before any tasks can be executed
+ * Create or update an analysis project, to include ALL objects known to IGC that were updated after the date received -- necessary before any tasks can be executed
  *
  * @param {string} name - name of the project
  * @param {string} description - description of the project
- * @param {string} type - the type of data the project will handle ["database", "file"]
  * @param {Date} [updatedAfter] - include into the project any objects in IGC last updated after this date
  * @param {requestCallback} callback - callback that handles the response
  */
-exports.createOrUpdateAnalysisProject = function(name, description, type, updatedAfter, callback) {
+exports.createOrUpdateAnalysisProject = function(name, description, updatedAfter, callback) {
 
   var schemasDiscovered = [];
   var schemasAdded = [];
+  var aFileList = [];
 
   var proj = new Project(name);
   proj.setDescription(description);
@@ -1008,110 +1169,114 @@ exports.createOrUpdateAnalysisProject = function(name, description, type, update
     } else {
       console.log("Project found, updating...");
     }
-
-    exports.getAllItemsToIgnore(function(errIgnore, typesToIgnoreItems) {
-
-//      if (type === "database") {
   
-        _getAllHostsWithDatabases(function(errHosts, resHosts) {
+    exports.getAllItemsToIgnore(function(errIgnore, typesToIgnoreItems) {
+  
+      _getAllHostsWithDatabases(function(errHosts, resHosts) {
     
-          for (var i = 0; i < resHosts.length; i++) {
-            
-            var sHostName = resHosts[i];
-            if (typesToIgnoreItems.host.indexOf(sHostName) == -1) {
+        for (var i = 0; i < resHosts.length; i++) {
+          
+          var sHostName = resHosts[i];
+          if (typesToIgnoreItems.host.indexOf(sHostName) == -1) {
 
-              _getAllDatabasesAndSchemasForHost(sHostName, function(errDBs, resDBs) {
+            _getAllDatabasesAndSchemasForHost(sHostName, function(errDBs, resDBs) {
       
-                for (var j = 0; j < resDBs.items.length; j++) {
-                  var item = resDBs.items[j];
-                  var sDbName = item._name;
-                  var sHostName = item["host.name"];
-                  var aSchemaNames = item["database_schemas.name"];
+              for (var j = 0; j < resDBs.items.length; j++) {
+                var item = resDBs.items[j];
+                var sDbName = item._name;
+                var sHostName = item["host.name"];
+                var aSchemaNames = item["database_schemas.name"];
 
-                  if (typesToIgnoreItems.database.indexOf(sHostName + "::" + sDbName) == -1) {
+                if (typesToIgnoreItems.database.indexOf(sHostName + "::" + sDbName) == -1) {
       
-                    for (var k = 0; k < aSchemaNames.length; k++) {
-                      var sSchemaName = aSchemaNames[k];
+                  for (var k = 0; k < aSchemaNames.length; k++) {
+                    var sSchemaName = aSchemaNames[k];
 
-                      if (typesToIgnoreItems.database_schema.indexOf(sHostName + "::" + sDbName + "::" + sSchemaName) == -1) {
-                        schemasDiscovered.push(sHostName + "::" + sDbName + "::" + sSchemaName);
-          
-                        _getAllTablesAndColumnsForSchema(sHostName, sDbName, sSchemaName, updatedAfter, function(errTbls, resTbls) {
-          
-                          schemasAdded.push(sDbName + "::" + sSchemaName);
-                          for (var m = 0; m < resTbls.items.length; m++) {
-                            var item = resTbls.items[m];
-                            var sTblName = item._name;
-                            var aColNames = item["database_columns.name"];
-                            var sSchemaName = item["database_schema.name"];
-                            var sDbName = item["database_schema.database.name"];
-                            var sHostName = item["database_schema.database.host.name"];
-                            if (typesToIgnoreItems.database_table.indexOf(sHostName + "::" + sDbName + "::" + sSchemaName + "::" + sTblName) == -1) {
-                              proj.addTable(sDbName, sSchemaName, sTblName, aColNames);
-                            } else {
-                              console.warn("  ignoring, based on label: " + sHostName + "::" + sDbName + "::" + sSchemaName + "::" + sTblName);
-                            }
+                    if (typesToIgnoreItems.database_schema.indexOf(sHostName + "::" + sDbName + "::" + sSchemaName) == -1) {
+                      schemasDiscovered.push(sHostName + "::" + sDbName + "::" + sSchemaName);
+
+                      _getAllTablesAndColumnsForSchema(sHostName, sDbName, sSchemaName, updatedAfter, function(errTbls, resTbls) {
+        
+                        schemasAdded.push(sDbName + "::" + sSchemaName);
+                        var sHostName = "";
+                        for (var m = 0; m < resTbls.items.length; m++) {
+                          var item = resTbls.items[m];
+                          var sTblName = item._name;
+                          var aColNames = item["database_columns.name"];
+                          var sSchemaName = item["database_schema.name"];
+                          var sDbName = item["database_schema.database.name"];
+                          sHostName = item["database_schema.database.host.name"];
+                          if (typesToIgnoreItems.database_table.indexOf(sHostName + "::" + sDbName + "::" + sSchemaName + "::" + sTblName) == -1) {
+                            proj.addTable(sDbName, sSchemaName, sTblName, aColNames);
+                          } else {
+                            console.warn("  ignoring, based on label: " + sHostName + "::" + sDbName + "::" + sSchemaName + "::" + sTblName);
                           }
-          
-                          if (schemasDiscovered.length == schemasAdded.length) {
-                            var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-                            console.log("Input (dbs): " + input);
-                            _createOrUpdateProjectRequest(input, bCreate, callback);
-                          }
-          
-                        });
-          
-                      } else {
-                        console.warn("  ignoring, based on label: " + sHostName + "::" + sDbName + "::" + sSchemaName);
-                      }
+                        }
+        
+                        if (schemasDiscovered.length == schemasAdded.length) {
+                          var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
+                          //console.log("Input (dbs): " + input);
+                          _createOrUpdateProjectRequest(input, bCreate, function(errUpsert, resUpsert) {
+                            _getLocalFileConnectorForHost(sHostName, function(errDCN, dcnRID) {
+                              _getProjectRID(description, function(errPrj, projectRID) {
+                                _addFilesToProject(dcnRID, projectRID, aFileList, callback);
+                              });
+                            });
+                          });
+                        }
+        
+                      });
+        
+                    } else {
+                      console.warn("  ignoring, based on label: " + sHostName + "::" + sDbName + "::" + sSchemaName);
                     }
-
-                  } else {
-                    console.warn("  ignoring, based on label: " + sHostName + "::" + sDbName);
                   }
-                }
-      
-              });
 
-            } else {
-              console.warn("  ignoring, based on label: " + sHostName);
-            }
-    
+                } else {
+                  console.warn("  ignoring, based on label: " + sHostName + "::" + sDbName);
+                }
+              }
+      
+            });
+
+          } else {
+            console.warn("  ignoring, based on label: " + sHostName);
           }
     
-        });
-      
-//      } else if (type === "file") {
+        }
+    
+      });
 
-        _getAllHostsWithFiles(function(errHosts, resHosts) {
+      _getAllHostsWithFiles(function(errHosts, resHosts) {
 
-          for (var i = 0; i < resHosts.length; i++) {
+        for (var i = 0; i < resHosts.length; i++) {
 
-            var sHostName = resHosts[i];
-            if (typesToIgnoreItems.host.indexOf(sHostName) == -1) {
+          var sHostName = resHosts[i];
+          if (typesToIgnoreItems.host.indexOf(sHostName) == -1) {
 
-              _getAllFoldersAndFilesForHost(sHostName, function(errFiles, resFolders) {
+            _getAllFoldersAndFilesForHost(sHostName, function(errFiles, resFolders) {
 
-                var foldersToFiles = {};
-                for (var i = 0; i < resFolders.items.length; i++) {
-                  var item = resFolders.items[i];
-                  var folderPath = igcrest.getItemIdentityString(item);
+              var foldersToFiles = {};
+              for (var i = 0; i < resFolders.items.length; i++) {
+                var item = resFolders.items[i];
+                var folderPath = igcrest.getItemIdentityString(item);
 
-                  if (typesToIgnoreItems.data_file_folder.indexOf(folderPath) == -1) {
+                if (typesToIgnoreItems.data_file_folder.indexOf(folderPath) == -1) {
 
-                    var aFiles = item.data_files.items;
-                    for (var j = 0; j < aFiles.length; j++) {
-                      var fileItem = aFiles[j];
-                      var fileRID = fileItem._id;
-                      var fileName = fileItem._name;
+                  var aFiles = item.data_files.items;
+                  for (var j = 0; j < aFiles.length; j++) {
+                    var fileItem = aFiles[j];
+                    var fileRID = fileItem._id;
+                    var fileName = fileItem._name;
 
-                      if (typesToIgnoreItems.data_file.indexOf(folderPath + "::" + fileName) == -1) {
+                    if (typesToIgnoreItems.data_file.indexOf(folderPath + "::" + fileName) == -1) {
 
-                        schemasDiscovered.push(folderPath + "::" + fileName);
-                        var sHostName = folderPath.substring(0, folderPath.indexOf("::"));
-                        var sFolderPath = folderPath.substring(folderPath.indexOf("::") + 2);
+                      schemasDiscovered.push(folderPath + "::" + fileName);
+                      var sHostName = folderPath.substring(0, folderPath.indexOf("::"));
+                      var sFolderPath = folderPath.substring(folderPath.indexOf("::") + 2);
 
-                        _getAllFieldNamesForFile(fileRID, function(err, fieldList) {
+                      _getAllFieldNamesForFile(fileRID, updatedAfter, function(err, fieldList) {
+                        if (fieldList.hasOwnProperty("id")) { // only proceed if there were actually any files that met the criteria
                           var identity = fieldList.id;
                           schemasAdded.push(identity);
                           var sHostName = identity.substring(0, identity.indexOf("::"));
@@ -1122,36 +1287,42 @@ exports.createOrUpdateAnalysisProject = function(name, description, type, update
                           if (sFolderPath.startsWith("//")) {
                             sFolderPath = sFolderPath.substring(1);
                           }
-                          proj.addFile(sHostName, sFolderPath, fileName, fieldList.fields);
-
+                          //proj.addFile(sHostName, sFolderPath, fileName, fieldList.fields);
+                          aFileList.push(sFolderPath + "/" + fileName);
+  
                           if (schemasDiscovered.length == schemasAdded.length) {
                             var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-                            console.log("Input (files): " + input);
-                            _createOrUpdateProjectRequest(input, bCreate, callback);
+                            //console.log("Input (files): " + input);
+                            _createOrUpdateProjectRequest(input, bCreate, function(errUpsert, resUpsert) {
+                              _getLocalFileConnectorForHost(sHostName, function(errDCN, dcnRID) {
+                                _getProjectRID(description, function(errPrj, projectRID) {
+                                  _addFilesToProject(dcnRID, projectRID, aFileList, callback);
+                                });
+                              });
+                            });
                           }
-                        });
+                        }
+                      });
 
-                      } else {
-                        console.warn("  ignoring, based on label: " + folderPath + "::" + fileName);
-                      }
+                    } else {
+                      console.warn("  ignoring, based on label: " + folderPath + "::" + fileName);
                     }
-
-                  } else {
-                    console.warn("  ignoring, based on label: " + folderPath);
                   }
+
+                } else {
+                  console.warn("  ignoring, based on label: " + folderPath);
                 }
+              }
 
-              });
+            });
 
-            } else {
-              console.warn("  ignoring, based on label: " + sHostName);
-            }
-
+          } else {
+            console.warn("  ignoring, based on label: " + sHostName);
           }
 
-        });
-    
-//      }
+        }
+
+      });
 
     });
 
@@ -1166,7 +1337,7 @@ exports.createOrUpdateAnalysisProject = function(name, description, type, update
  */
 exports.getProjectList = function(callback) {
 
-  this.makeRequest('GET', "/ibm/iis/ia/api/projects", null, function(res, resXML) {
+  this.makeRequest('GET', "/ibm/iis/ia/api/projects", null, null, function(res, resXML) {
     var err = null;
     if (res.statusCode != 200) {
       err = "Unsuccessful request " + res.statusCode;
@@ -1195,7 +1366,7 @@ exports.getProjectList = function(callback) {
  */
 exports.getProjectDataSourceList = function(projectName, bByColumn, callback) {
 
-  this.makeRequest('GET', encodeURI("/ibm/iis/ia/api/project?projectName=" + projectName), null, function(res, resXML) {
+  this.makeRequest('GET', encodeURI("/ibm/iis/ia/api/project?projectName=" + projectName), null, null, function(res, resXML) {
     
     var err = null;
     if (res.statusCode != 200) {
@@ -1287,7 +1458,7 @@ exports.runColumnAnalysis = function(projectName, type, hostname, datasource, lo
   }
 
   var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-  exports.makeRequest('POST', "/ibm/iis/ia/api/executeTasks", input, function(res, resExec) {
+  exports.makeRequest('POST', "/ibm/iis/ia/api/executeTasks", input, 'text/xml', function(res, resExec) {
     var err = null;
     if (res.statusCode != 200) {
       err = "Unsuccessful request " + res.statusCode;
@@ -1325,7 +1496,7 @@ exports.runColumnAnalysisForSources = function(projectName, aSources, callback) 
   }
 
   var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-  exports.makeRequest('POST', "/ibm/iis/ia/api/executeTasks", input, function(res, resExec) {
+  exports.makeRequest('POST', "/ibm/iis/ia/api/executeTasks", input, 'text/xml', function(res, resExec) {
     var err = null;
     if (res.statusCode != 200) {
       err = "Unsuccessful request " + res.statusCode;
@@ -1361,7 +1532,7 @@ exports.publishResults = function(projectName, type, hostname, datasource, locat
   }
 
   var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-  exports.makeRequest('POST', "/ibm/iis/ia/api/publishResults", input, function(res, resExec) {
+  exports.makeRequest('POST', "/ibm/iis/ia/api/publishResults", input, 'text/xml', function(res, resExec) {
     var err = null;
     if (res.statusCode != 200) {
       err = "Unsuccessful request " + res.statusCode;
@@ -1399,7 +1570,7 @@ exports.publishResultsForSources = function(projectName, aSources, callback) {
   }
 
   var input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-  exports.makeRequest('POST', "/ibm/iis/ia/api/publishResults", input, function(res, resExec) {
+  exports.makeRequest('POST', "/ibm/iis/ia/api/publishResults", input, 'text/xml', function(res, resExec) {
     var err = null;
     if (res.statusCode != 200) {
       err = "Unsuccessful request " + res.statusCode;
@@ -1489,39 +1660,66 @@ exports.getStaleAnalysisResults = function(projectName, timeToConsiderStale, cal
         }
       }
 
+// TODO: uncomment line below once files are working
       callback(err, aTablesToAnalyze);
 
     });
 
 // TODO: handle files
-/*
-    var staleFileFields = {
+    var staleFiles = {
       "pageSize": "10000",
-      "properties": [ "name", "data_file_record.name", "data_file_record.data_file.path", "data_file_record.data_file.host.name" ],
-      "types": [ "file_record_analysis" ],
-      "where":
-      {
-        "operator": "and",
-        "conditions":
-        [
-          {
-            "property": "modified_on",
-            "operator": "<=",
-            "value": timeToConsiderStale.valueOf()
-          }
-        ]
-      }
+      "properties": [ "name", "modified_on", "data_file_record.name", "data_file_record.data_file.path", "data_file_record.data_file.host.name" ],
+      "types": [ "file_record_analysis" ]
     };
 
-    console.log("Searching fields: " + JSON.stringify(staleFileFields));
-    igcrest.search(staleFileFields, function (err, resSearch) {
+    console.log("Searching files: " + JSON.stringify(staleFiles));
+    igcrest.search(staleFiles, function (err, resSearch) {
   
-      console.log(JSON.stringify(resSearch));
-      callback(err, resSearch);
+      var aFilesToAnalyze = [];
+
+      var filesWithAnalysisResults = {};
+      for (var i = 0; i < resSearch.items.length; i++) {
+        var item = resSearch.items[i];
+        var sFileAnalysisName = item._name;
+        var sHostName = item["data_file_record.data_file.host.name"];
+        var sFolderPath = item["data_file_record.data_file.path"];
+        var sRecordName = item["data_file_record.name"];
+        var dModified = new Date(item["modified_on"]);
+        var qualifiedName = sHostName + ":" + sFolderPath + ":" + sRecordName;
+        if (filesWithAnalysisResults.hasOwnProperty(qualifiedName)) {
+          var lastTime = filesWithAnalysisResults[qualifiedName];
+          if (lastTime < dModified) {
+            filesWithAnalysisResults[qualifiedName] = dModified;
+          }
+        } else {
+          console.log("Found analysis result for: " + qualifiedName);
+          filesWithAnalysisResults[qualifiedName] = dModified;
+        }
+      }
+
+      for (var key in projectFiles) {
+        if (projectFiles.hasOwnProperty(key)) {
+          // If there is no analysis result, it has never been analyzed -- add it
+          if (!filesWithAnalysisResults.hasOwnProperty(key)) {
+            console.log("Adding file to analyze: " + key);
+            aFilesToAnalyze.push(key);
+          } else {
+            // Otherwise, check the date of the last analysis
+            var lastAnalysis = filesWithAnalysisResults(key);
+            if (lastAnalysis <= timeToConsiderStale) {
+              console.log("Stale analysis: " + key);
+              aFilesToAnalyze.push(key);
+            } else {
+              console.log("Ignoring -- not stale: " + key);
+            }
+          }
+        }
+      }
+
+      callback(err, aFilesToAnalyze);
 
     });
-*/
-    // Compare the two lists -- any overlap will be our results
+
 
   });
 
@@ -1534,7 +1732,7 @@ exports.getStaleAnalysisResults = function(projectName, timeToConsiderStale, cal
  * @param {statusCallback} callback - callback that handles the response
  */
 exports.getTaskStatus = function(executionID, callback) {
-  this.makeRequest('GET', "/ibm/iis/ia/api/analysisStatus?scheduleID=" + executionID, null, function(res, resStatus) {
+  this.makeRequest('GET', "/ibm/iis/ia/api/analysisStatus?scheduleID=" + executionID, null, null, function(res, resStatus) {
     var err = null;
     if (res.statusCode != 200) {
       err = "Unsuccessful request " + res.statusCode;
@@ -1594,7 +1792,7 @@ exports.reindexThinClient = function(batchSize, solrBatchSize, upgrade, force, c
             + "&solrBatchSize=" + _getValueOrDefault(solrBatchSize, 100)
             + "&upgrade=" + _getValueOrDefault(upgrade, false)
             + "&force=" + _getValueOrDefault(force, true);
-  this.makeRequest('GET', request, null, function(res, resStatus) {
+  this.makeRequest('GET', request, null, null, function(res, resStatus) {
     var err = null;
     if (res.statusCode != 200) {
       err = "Unsuccessful request " + res.statusCode;

@@ -94,9 +94,13 @@ if (lastRefreshTime !== undefined && lastRefreshTime !== "") {
 
 iarest.addIADBToIgnoreList(function(err, resIgnore) {
   iarest.getProjectList(function(err, resList) {
-    // TODO: replace database hard-coding (shouldn't be based on a pre-defined type at all, just timestamp?)
-    iarest.createOrUpdateAnalysisProject(prjName, prjDesc, "database", addAfter, function(err, results) {
-      console.log(results);
+    iarest.createOrUpdateAnalysisProject(prjName, prjDesc, addAfter, function(err, results) {
+      if (err !== undefined && err !== null && err !== "") {
+        console.error("  status: error --> " + err);
+        process.exit(1);
+      } else {
+        console.log("  status: " + results);
+      }
     });
   });
 });

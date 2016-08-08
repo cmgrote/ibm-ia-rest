@@ -1,6 +1,6 @@
 {
   "name": "ibm-ia-rest",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Library to use IBM Information Analyzer REST API",
   "main": "./index.js",
   "files": [
