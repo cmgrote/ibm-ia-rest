@@ -970,7 +970,6 @@ function _addFilesToProject(dcnRID, projectRID, aFileList, callback) {
 
       var fileList = _prepFilesArray(aFileList);
       var endpoint = "/ibm/iis/dq/da/rest/v1/catalog/dataSets/doRegisterAndAddToWorkspaces"
-      // TODO: Need to get a record / row delimiter added that actually works...
       var addFilesJSON = {
         "properties": {
           "registrationParameters": {
@@ -981,7 +980,7 @@ function _addFilesToProject(dcnRID, projectRID, aFileList, callback) {
             "DirectoryContents": fileList
           },
           "connectionParameters": {},
-          "formattingParameters": "record_delim='\\n',delim=',',header='true',charset='UTF-8'"
+          "formattingParameters": "delim=',',header='true',charset='UTF-8'"
         },
         "options": {
           "workspaces": [
