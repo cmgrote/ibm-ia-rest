@@ -1665,9 +1665,13 @@ exports.getStaleAnalysisResults = function(projectName, timeToConsiderStale, cal
     });
 
 // TODO: handle files
+// The tricky bit is that 'data_file' is just referenced as a 'main_object' -- so the last two properties below are not directly referenceable...
+// ... probably have to run a follow-up search on all 'data_file' objects where the 'data_file_records' contains a particular RID (?)
+//      "properties": [ "name", "modified_on", "data_file_record.name", "data_file_record.data_file.path", "data_file_record.data_file.host.name" ],
+
     var staleFiles = {
       "pageSize": "10000",
-      "properties": [ "name", "modified_on", "data_file_record.name", "data_file_record.data_file.path", "data_file_record.data_file.host.name" ],
+      "properties": [ "name", "modified_on", "data_file_record.name" ],
       "types": [ "file_record_analysis" ]
     };
 
