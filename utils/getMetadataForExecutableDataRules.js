@@ -104,10 +104,8 @@ igcrest.search(iaDataRuleQ, function (err, resSearch) {
 
   if (resSearch.items.length == 0) {
     console.warn("WARN: Did not find any Data Rules with the name '" + receivedRuleName + "'.");
-    //process.exit(1);
   } else if (resSearch.items.length > 1) {
     console.warn("WARN: Found more than one Data Rule with the name '" + receivedRuleName +"'.");
-    //process.exit(1);
   } else {
 
     for (var r = 0; r < resSearch.items.length; r++) {
@@ -170,10 +168,8 @@ igcrest.search(dsDataRuleQ, function (err, resSearch) {
 
   if (resSearch.items.length == 0) {
     console.warn("WARN: Did not find any Data Rule Stage with the name '" + receivedRuleName + "'.");
-    //process.exit(1);
   } else if (resSearch.items.length > 1) {
     console.warn("WARN: Found more than one Data Rule Stage with the name '" + receivedRuleName +"'.");
-    //process.exit(1);
   } else {
 
     for (var r = 0; r < resSearch.items.length; r++) {
