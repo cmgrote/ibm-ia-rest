@@ -1809,6 +1809,57 @@ exports.reindexThinClient = function(batchSize, solrBatchSize, upgrade, force, c
 }
 
 /**
+ * Retrieves a listing of any records that failed a particular Data Rule or Data Rule Set (its latest execution)
+ *
+ * @param {string} projectName - The name of the Information Analyzer project in which the Data Rule or Data Rule Set exists
+ * @param {string} ruleOrSetName - The name of the Data Rule or Data Rule Set
+ * @param {int} numRows - The maximum number of rows to retrieve (if unspecified will default to 100)
+ * @param {recordsCallback} callback - the records that failed
+ */
+exports.getRuleExecutionFailedRecordsFromLastRun = function(projectName, ruleOrSetName, numRows, callback) {
+  var request = "/ibm/iis/ia/api/executableRule/outputTable";
+  request = request
+            + "?projectName=" + encodeURI(projectName)
+            + "&ruleName=" + encodeURI(ruleOrSetName);
+  if (numRows !== undefined && numRows !== null) {
+    request = request + "&nbOfRows=" + numRows;
+  } else {
+    request = request + "&nbOfRows=100";
+  }
+  this.makeRequest('GET', request, null, null, function(res, resRecords) {
+    var err = null;
+    if (res.statusCode != 200) {
+      err = "Unsuccessful request " + res.statusCode;
+      console.error(err);
+      console.error('headers: ', res.headers);
+      throw new Error(err);
+    } else {
+      var aRows = [];
+      var resDoc = new xmldom.DOMParser().parseFromString(resRecords);
+      var nlCols = xpath.select("//*[local-name(.)='OutputColumn']", resDoc);
+      var nlRows = xpath.select("//*[local-name(.)='Row']", resDoc);
+      var aColNames = [];
+      for (var i = 0; i < nlCols.length; i++) {
+        var colName = nlCols[i].getAttribute("name");
+        aColNames.push(colName);
+      }
+      for (var i = 0; i < nlRows.length; i++) {
+        var nlCells = nlRows[i].getElementsByTagName("Value");
+        var rowVals = {};
+        for (var j = 0; j < nlCells.length; j++) {
+          var value = nlCells[j].textContent;
+          var colName = aColNames[j];
+          rowVals[colName] = value;
+        }
+        aRows.push(rowVals);
+      }
+      callback(err, aRows);
+      return aRows;
+    }
+  });
+}
+
+/**
  * This callback is invoked as the result of an IA REST API call, providing the response of that request.
  * @callback requestCallback
  * @param {string} errorMessage - any error message, or null if no errors
@@ -1834,6 +1885,13 @@ exports.reindexThinClient = function(batchSize, solrBatchSize, upgrade, force, c
  * @callback reindexCallback
  * @param {string} errorMessage - any error message, or null if no errors
  * @param {string} status - the status of the reindex operation ["REINDEX_SUCCESSFUL"]
+ */
+
+/**
+ * This callback is invoked as the result of an IA REST API call to retrieve records that failed Data Rules
+ * @callback recordsCallback
+ * @param {string} errorMessage - any error message, or null if no errors
+ * @param {Object[]} records - an array of records, each record being a JSON object keyed by column name and with the value of the column for that row
  */
 
  /**
