@@ -1860,6 +1860,53 @@ exports.getRuleExecutionFailedRecordsFromLastRun = function(projectName, ruleOrS
 }
 
 /**
+ * Retrieves the statistics of the executions of a particular Data Rule or Data Rule Set
+ *
+ * @param {string} projectName - The name of the Information Analyzer project in which the Data Rule or Data Rule Set exists
+ * @param {string} ruleOrSetName - The name of the Data Rule or Data Rule Set
+ * @param {boolean} bLatestOnly - If true, returns only the statistics from the latest execution (otherwise full history)
+ * @param {statsCallback} callback - the statistics of the historical execution(s)
+ */
+exports.getRuleExecutionResults = function(projectName, ruleOrSetName, bLatestOnly, callback) {
+  var request = "/ibm/iis/ia/api/executableRule/executionHistory";
+  request = request
+            + "?projectName=" + encodeURI(projectName)
+            + "&ruleName=" + encodeURI(ruleOrSetName);
+  this.makeRequest('GET', request, null, null, function(res, resStats) {
+    var err = null;
+    if (res.statusCode != 200) {
+      err = "Unsuccessful request " + res.statusCode;
+      console.error(err);
+      console.error('headers: ', res.headers);
+      throw new Error(err);
+    } else {
+      var aStats = [];
+      var resDoc = new xmldom.DOMParser().parseFromString(resStats);
+      var nlResults = xpath.select("//*[local-name(.)='RuleExecutionResult']", resDoc);
+      for (var i = 0; i < nlResults.length; i++) {
+        var sample = nlResults[i].getElementsByTagName("RuntimeMetaData")[0].getAttribute("sampleUsed");
+        if (sample === "false") { // only take full runs, not samples
+          var stat = {
+            id: nlResults[i].getAttribute("id"),
+            dStart: nlResults[i].getAttribute("startTime"),
+            dEnd: nlResults[i].getAttribute("endTime"),
+            numFailed: nlResults[i].getAttribute("nbFailed"),
+            numTotal: nlResults[i].getAttribute("nbOfRecords"),
+            status: nlResults[i].getAttribute("status")
+          };
+          aStats.push(stat);
+          if (bLatestOnly) {
+            i = nlResults.length;
+          }
+        }
+      }
+      callback(err, aStats);
+      return aStats;
+    }
+  });
+}
+
+/**
  * This callback is invoked as the result of an IA REST API call, providing the response of that request.
  * @callback requestCallback
  * @param {string} errorMessage - any error message, or null if no errors
@@ -1892,6 +1939,13 @@ exports.getRuleExecutionFailedRecordsFromLastRun = function(projectName, ruleOrS
  * @callback recordsCallback
  * @param {string} errorMessage - any error message, or null if no errors
  * @param {Object[]} records - an array of records, each record being a JSON object keyed by column name and with the value of the column for that row
+ */
+
+/**
+ * This callback is invoked as the result of an IA REST API call to retrieve historical statistics on Data Rule executions
+ * @callback statsCallback
+ * @param {string} errorMessage - any error message, or null if no errors
+ * @param {Object[]} stats - an array of stats, each stat being a JSON object with ???
  */
 
  /**
