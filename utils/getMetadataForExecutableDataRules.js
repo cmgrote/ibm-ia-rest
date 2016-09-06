@@ -121,8 +121,14 @@ igcrest.search(iaDataRuleQ, function (err, resSearch) {
       } else {
         var dqDimension = policyDetails[0]._name;
         var infoGovRuleName = infoGovRuleDetails[0]._name;
-        var colName = bindingDetails[0]._name;
-        var colRID = bindingDetails[0]._id;
+        var aColNames = [];
+        var aColRIDs = [];
+        for (var i = 0; i < bindingDetails.length; i++) {
+          aColNames.push(bindingDetails[i]._name);
+          aColRIDs.push(bindingDetails[i]._id);
+        }
+//        var colName = bindingDetails[0]._name;
+//        var colRID = bindingDetails[0]._id;
     
         var aTerms = [];
         var aStewards = [];
@@ -133,11 +139,11 @@ igcrest.search(iaDataRuleQ, function (err, resSearch) {
             if (governedAssets[i]._type === "term") {
               iFoundTerms++;
               aTerms.push(governedAssets[i]._name);
-              getDataOwners("term", governedAssets[i]._id, {'ruleName': ruleName, 'infoGovRuleName': infoGovRuleName, 'dqDimension': dqDimension, 'colName': colName, 'colRID': colRID, 'aTerms': aTerms}, function(err, aStewardsForATerm, passthru) {
-                iProcessedTerms++;
+              getDataOwners("term", governedAssets[i]._id, {'ruleName': ruleName, 'infoGovRuleName': infoGovRuleName, 'dqDimension': dqDimension, 'aColNames': aColNames, 'aColRIDs': aColRIDs, 'aTerms': aTerms, 'iFoundTerms': iFoundTerms, 'iProcessedTerms': iProcessedTerms}, function(err, aStewardsForATerm, passthru) {
+                passthru.iProcessedTerms++;
                 aStewards.push.apply(aStewards, aStewardsForATerm);
-                if (iProcessedTerms == iFoundTerms) {
-                  outputRuleMetadata(passthru.ruleName, passthru.infoGovRuleName, passthru.dqDimension, passthru.colName, passthru.colRID, passthru.aTerms, aStewards);
+                if (passthru.iProcessedTerms == passthru.iFoundTerms) {
+                  outputRuleMetadata(passthru.ruleName, passthru.infoGovRuleName, passthru.dqDimension, passthru.aColNames, passthru.aColRIDs, passthru.aTerms, aStewards);
                 }
               });
             }
@@ -146,11 +152,11 @@ igcrest.search(iaDataRuleQ, function (err, resSearch) {
           for (var i = 0; i < termDetails.length; i++) {
             iFoundTerms++;
             aTerms.push(termDetails[i]._name);
-            getDataOwners("term", termDetails[i]._id, {'ruleName': ruleName, 'infoGovRuleName': infoGovRuleName, 'dqDimension': dqDimension, 'colName': colName, 'colRID': colRID, 'aTerms': aTerms}, function(err, aStewardsForATerm, passthru) {
-              iProcessedTerms++;
+            getDataOwners("term", termDetails[i]._id, {'ruleName': ruleName, 'infoGovRuleName': infoGovRuleName, 'dqDimension': dqDimension, 'aColNames': aColNames, 'aColRIDs': aColRIDs, 'aTerms': aTerms, 'iFoundTerms': iFoundTerms, 'iProcessedTerms': iProcessedTerms}, function(err, aStewardsForATerm, passthru) {
+              passthru.iProcessedTerms++;
               aStewards.push.apply(aStewards, aStewardsForATerm);
-              if (iProcessedTerms == iFoundTerms) {
-                outputRuleMetadata(passthru.ruleName, passthru.infoGovRuleName, passthru.dqDimension, passthru.colName, passthru.colRID, passthru.aTerms, aStewards);
+              if (passthru.iProcessedTerms == passthru.iFoundTerms) {
+                outputRuleMetadata(passthru.ruleName, passthru.infoGovRuleName, passthru.dqDimension, passthru.aColNames, passthru.aColRIDs, passthru.aTerms, aStewards);
               }
             });
           }
@@ -274,11 +280,11 @@ function getDataOwners(type, rid, passthru, callback) {
   });
 }
 
-function outputRuleMetadata(ruleName, infoGovRuleName, dqDimension, colName, colRID, aTerms, aStewards) {
+function outputRuleMetadata(ruleName, infoGovRuleName, dqDimension, colNames, colRIDs, aTerms, aStewards) {
   console.log("Found the following for rule '" + ruleName + "':");
   console.log("  - Info gov rule   = " + infoGovRuleName);
   console.log("  - DQ dimension    = " + dqDimension);
-  console.log("  - Bound column    = " + colName + " (" + colRID + ")");
+  console.log("  - Bound column    = " + colNames + " (" + colRIDs + ")");
   console.log("  - Related term(s) = " + aTerms);
   console.log("  - Data owner(s)   = " + aStewards);
 }
