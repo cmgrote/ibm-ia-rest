@@ -16,6 +16,8 @@
  * limitations under the License.
  */
 
+"use strict";
+
 /**
  * @file Extract all rule-related assets from an environment
  * @license Apache-2.0
@@ -30,8 +32,8 @@ require('shelljs/global');
 const path = require('path');
 
 // Command-line setup
-var yargs = require('yargs');
-var argv = yargs
+const yargs = require('yargs');
+const argv = yargs
     .usage('Usage: $0 -i <iaProjectName> -d <dsProjectName> -e <engineTierFQDN> -f <path> -u <user> -p <password>')
     .option('i', {
       alias: 'ianame',
@@ -77,53 +79,53 @@ var argv = yargs
     .argv;
 
 console.log("Extracting all Information Analyzer assets from '" + argv.ianame + "'...");
-var cmd = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh export"
-        + " -u " + argv.deploymentUser
-        + " -p " + argv.deploymentUserPassword
-        + " -ar '" + argv.filepath + ".isx'"
-        + " -up -ia '-projects \"\\\\" + argv.ianame + "\\\\\""
-        + " -includeDataClasses -includeCommonMetadata -includeProjectRoles -includeReports'";
-var result = exec(cmd, {silent: true, "shell": "/bin/bash"});
-if (result.code !== 0) {
+const cmdExportIA = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh export" +
+    " -u " + argv.deploymentUser +
+    " -p " + argv.deploymentUserPassword +
+    " -ar '" + argv.filepath + ".isx'" +
+    " -up -ia '-projects \"\\\\" + argv.ianame + "\\\\\"" +
+    " -includeDataClasses -includeCommonMetadata -includeProjectRoles -includeReports'";
+const resultExportIA = exec(cmdExportIA, {silent: true, "shell": "/bin/bash"});
+if (resultExportIA.code !== 0) {
   console.error("ERROR exporting IA content:");
-  console.error(result.stderr);
-  process.exit(result.code);
+  console.error(resultExportIA.stderr);
+  process.exit(resultExportIA.code);
 }
 
 // TODO: limit only to policies, rules and related assets (not all terms, categories, etc)
 console.log("Extracting all Information Governance Catalog assets...");
-cmd = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh glossary export"
-    + " -u " + argv.deploymentUser
-    + " -p " + argv.deploymentUserPassword
-    + " -f '" + argv.filepath + ".xmi'"
-    + " -format XMI -allpoliciesrules -includeassignedassets -includestewardship -includelabeledassets -includeTermHistory";
-result = exec(cmd, {silent: true, "shell": "/bin/bash"});
-if (result.code !== 0) {
+const cmdExportBG = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh glossary export" +
+    " -u " + argv.deploymentUser +
+    " -p " + argv.deploymentUserPassword +
+    " -f '" + argv.filepath + ".xmi'" +
+    " -format XMI -allpoliciesrules -includeassignedassets -includestewardship -includelabeledassets -includeTermHistory";
+const resultExportBG = exec(cmdExportBG, {silent: true, "shell": "/bin/bash"});
+if (resultExportBG.code !== 0) {
   console.error("ERROR exporting IGC content:");
-  console.error(result.stderr);
-  process.exit(result.code);
+  console.error(resultExportBG.stderr);
+  process.exit(resultExportBG.code);
 }
 
 // TODO: limit only to DataStage jobs that include Data Rules Stages (?)
 console.log("Extracting all DataStage assets from '" + argv.dsname + "'...");
-cmd = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh export"
-    + " -u " + argv.deploymentUser
-    + " -p " + argv.deploymentUserPassword
-    + " -ar '" + argv.filepath + ".isx'"
-    + " -up -ds '" + argv.engine + "/" + argv.dsname + "/*/*.* -incdep'";
-result = exec(cmd, {silent: true, "shell": "/bin/bash"});
-if (result.code !== 0) {
+const cmdExportDS = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh export" +
+    " -u " + argv.deploymentUser +
+    " -p " + argv.deploymentUserPassword +
+    " -ar '" + argv.filepath + ".isx'" +
+    " -up -ds '" + argv.engine + "/" + argv.dsname + "/*/*.* -incdep'";
+const resultExportDS = exec(cmdExportDS, {silent: true, "shell": "/bin/bash"});
+if (resultExportDS.code !== 0) {
   console.error("ERROR exporting DS content:");
-  console.error(result.stderr);
-  process.exit(result.code);
+  console.error(resultExportDS.stderr);
+  process.exit(resultExportDS.code);
 }
 
-cmd = "tar zcv -C " + path.dirname(argv.filepath) + " -f '" + argv.filepath + ".tgz' '" + path.posix.basename(argv.filepath) + ".isx' '" + path.posix.basename(argv.filepath) + ".xmi'";
-result = exec(cmd, {silent: true, "shell": "/bin/bash"});
-if (result.code !== 0) {
+const cmdTGZ = "tar zcv -C " + path.dirname(argv.filepath) + " -f '" + argv.filepath + ".tgz' '" + path.posix.basename(argv.filepath) + ".isx' '" + path.posix.basename(argv.filepath) + ".xmi'";
+const resultTGZ = exec(cmdTGZ, {silent: true, "shell": "/bin/bash"});
+if (resultTGZ.code !== 0) {
   console.error("ERROR creating single bundle TGZ:");
-  console.error(result.stderr);
-  process.exit(result.code);
+  console.error(resultTGZ.stderr);
+  process.exit(resultTGZ.code);
 }
 
 rm(argv.filepath + ".isx");

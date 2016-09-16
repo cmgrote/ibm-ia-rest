@@ -16,6 +16,8 @@
  * limitations under the License.
  */
 
+"use strict";
+
 /**
  * @file Loads all rule-related assets into an environment from the specified file
  * @license Apache-2.0
@@ -30,8 +32,8 @@ require('shelljs/global');
 const path = require('path');
 
 // Command-line setup
-var yargs = require('yargs');
-var argv = yargs
+const yargs = require('yargs');
+const argv = yargs
     .usage('Usage: $0 -d <dsProjectName> -e <engineTierFQDN> -f <path> -u <user> -p <password> -m <mappingFile>')
     .option('d', {
       alias: 'dsname',
@@ -76,69 +78,69 @@ var argv = yargs
     .wrap(yargs.terminalWidth())
     .argv;
 
-var parsedPath = path.parse(argv.filepath);
-var tmpPath = parsedPath.root + parsedPath.dir + path.sep + parsedPath.name;
-var baseFilename = parsedPath.name;
+const parsedPath = path.parse(argv.filepath);
+const tmpPath = parsedPath.root + parsedPath.dir + path.sep + parsedPath.name;
+const baseFilename = parsedPath.name;
 
-var bCreated = false;
+let bCreated = false;
 if (!test('-d', tmpPath)) {
   mkdir(tmpPath);
   bCreated = true;
 }
 
-var cmd = "tar zxv -C '" + tmpPath + "' -f '" + argv.filepath + "'";
-var result = exec(cmd, {silent: true, "shell": "/bin/bash"});
-if (result.code !== 0) {
+const cmdTGZ = "tar zxv -C '" + tmpPath + "' -f '" + argv.filepath + "'";
+const resultTGZ = exec(cmdTGZ, {silent: true, "shell": "/bin/bash"});
+if (resultTGZ.code !== 0) {
   console.error("ERROR extracting single bundle TGZ:");
-  console.error(result.stderr);
-  process.exit(result.code);
+  console.error(resultTGZ.stderr);
+  process.exit(resultTGZ.code);
 }
 
 console.log("Importing all Information Analyzer assets from '" + tmpPath + path.sep + baseFilename + ".isx'...");
-cmd = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh import"
-        + " -u " + argv.deploymentUser
-        + " -p " + argv.deploymentUserPassword
-        + " -ar '" + tmpPath + path.sep + baseFilename + ".isx'"
-        + " -replace -cm '' -ia '-onNameConflict replace' -report";
+let cmdImportIA = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh import" +
+    " -u " + argv.deploymentUser +
+    " -p " + argv.deploymentUserPassword +
+    " -ar '" + tmpPath + path.sep + baseFilename + ".isx'" +
+    " -replace -cm '' -ia '-onNameConflict replace' -report";
 if (argv.mapping) {
-  cmd = cmd + " -mapping '" + argv.mapping + "'";
+  cmdImportIA = cmdImportIA + " -mapping '" + argv.mapping + "'";
 }
-result = exec(cmd, {silent: true, "shell": "/bin/bash"});
-if (result.code !== 0) {
+const resultImportIA = exec(cmdImportIA, {silent: true, "shell": "/bin/bash"});
+if (resultImportIA.code !== 0) {
   console.error("ERROR importing IA content:");
-  console.error(result.stderr);
-  process.exit(result.code);
+  console.error(resultImportIA.stderr);
+  process.exit(resultImportIA.code);
 }
 
 // TODO: limit only to DataStage jobs that include Data Rules Stages (?)
 console.log("Importing all DataStage assets from '" + tmpPath + path.sep + baseFilename + ".isx'...");
-cmd = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh import"
-    + " -u " + argv.deploymentUser
-    + " -p " + argv.deploymentUserPassword
-    + " -ar '" + tmpPath + path.sep + baseFilename + ".isx'"
-    + " -replace -ds '" + argv.engine + "/" + argv.dsname + "'";
-result = exec(cmd, {silent: true, "shell": "/bin/bash"});
-if (result.code !== 0) {
+const cmdImportDS = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh import" +
+    " -u " + argv.deploymentUser +
+    " -p " + argv.deploymentUserPassword +
+    " -ar '" + tmpPath + path.sep + baseFilename + ".isx'" +
+    " -replace -ds '" + argv.engine + "/" + argv.dsname + "'";
+const resultImportDS = exec(cmdImportDS, {silent: true, "shell": "/bin/bash"});
+if (resultImportDS.code !== 0) {
   console.error("ERROR importing DS content:");
-  console.error(result.stderr);
-  process.exit(result.code);
+  console.error(resultImportDS.stderr);
+  process.exit(resultImportDS.code);
 }
 
 // TODO: limit only to policies, rules and related assets (not all terms, categories, etc)
 console.log("Importing all Information Governance Catalog assets...");
-cmd = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh glossary import"
-    + " -u " + argv.deploymentUser
-    + " -p " + argv.deploymentUserPassword
-    + " -f '" + tmpPath + path.sep + baseFilename + ".xmi'"
-    + " -format XMI -mergemethod mergeoverwrite";
+let cmdImportBG = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh glossary import" +
+    " -u " + argv.deploymentUser +
+    " -p " + argv.deploymentUserPassword +
+    " -f '" + tmpPath + path.sep + baseFilename + ".xmi'" +
+    " -format XMI -mergemethod mergeoverwrite";
 if (argv.mapping) {
-  cmd = cmd + " -map '" + argv.mapping + "'";
+  cmdImportBG = cmdImportBG + " -map '" + argv.mapping + "'";
 }
-result = exec(cmd, {silent: true, "shell": "/bin/bash"});
-if (result.code !== 0) {
+const resultImportBG = exec(cmdImportBG, {silent: true, "shell": "/bin/bash"});
+if (resultImportBG.code !== 0) {
   console.error("ERROR importing IGC content:");
-  console.error(result.stderr);
-  process.exit(result.code);
+  console.error(resultImportBG.stderr);
+  process.exit(resultImportBG.code);
 }
 
 if (bCreated) {
