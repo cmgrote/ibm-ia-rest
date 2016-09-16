@@ -93,6 +93,14 @@ if (receivedRuleName !== undefined) {
   };
 }
 
+function processAllCollectedDataForRule(err, aStewardsForOneObject, iProcessed, iFound, passthru, aStewards) {
+  iProcessed++;
+  aStewards.push.apply(aStewards, aStewardsForOneObject);
+  if (iProcessed === iFound) {
+    outputRuleMetadata(passthru.ruleName, passthru.infoGovRuleName, passthru.dqDimension, passthru.aColNames, passthru.aColRIDs, passthru.aTerms, aStewards);
+  }
+}
+
 // NOTE: we are NOT retrieving the association to term from Info Gov Rule, and from term to information asset
 // -- that might allow us to do the same for Data Rules executed via DataStage; however...
 // In reality this probably doesn't work: the Term linked to the Info Gov Rule may actually link to a column in each of OS, IWH, DM, etc
@@ -139,26 +147,30 @@ igcrest.search(iaDataRuleQ, function (err, resSearch) {
             if (governedAssets[i]._type === "term") {
               iFoundTerms++;
               aTerms.push(governedAssets[i]._name);
-              getDataOwners("term", governedAssets[i]._id, {'ruleName': ruleName, 'infoGovRuleName': infoGovRuleName, 'dqDimension': dqDimension, 'aColNames': aColNames, 'aColRIDs': aColRIDs, 'aTerms': aTerms, 'iFoundTerms': iFoundTerms, 'iProcessedTerms': iProcessedTerms}, function(err, aStewardsForATerm, passthru) {
-                passthru.iProcessedTerms++;
-                aStewards.push.apply(aStewards, aStewardsForATerm);
-                if (passthru.iProcessedTerms === passthru.iFoundTerms) {
-                  outputRuleMetadata(passthru.ruleName, passthru.infoGovRuleName, passthru.dqDimension, passthru.aColNames, passthru.aColRIDs, passthru.aTerms, aStewards);
-                }
-              });
+              const objDetails = {
+                'ruleName': ruleName,
+                'infoGovRuleName': infoGovRuleName,
+                'dqDimension': dqDimension,
+                'aColNames': aColNames,
+                'aColRIDs': aColRIDs,
+                'aTerms': aTerms
+              };
+              getDataOwners("term", governedAssets[i]._id, objDetails, iProcessedTerms, iFoundTerms, aStewards, processAllCollectedDataForRule);
             }
           }
         } else {
           for (let i = 0; i < termDetails.length; i++) {
             iFoundTerms++;
             aTerms.push(termDetails[i]._name);
-            getDataOwners("term", termDetails[i]._id, {'ruleName': ruleName, 'infoGovRuleName': infoGovRuleName, 'dqDimension': dqDimension, 'aColNames': aColNames, 'aColRIDs': aColRIDs, 'aTerms': aTerms, 'iFoundTerms': iFoundTerms, 'iProcessedTerms': iProcessedTerms}, function(err, aStewardsForATerm, passthru) {
-              passthru.iProcessedTerms++;
-              aStewards.push.apply(aStewards, aStewardsForATerm);
-              if (passthru.iProcessedTerms === passthru.iFoundTerms) {
-                outputRuleMetadata(passthru.ruleName, passthru.infoGovRuleName, passthru.dqDimension, passthru.aColNames, passthru.aColRIDs, passthru.aTerms, aStewards);
-              }
-            });
+            const objDetails = {
+              'ruleName': ruleName,
+              'infoGovRuleName': infoGovRuleName,
+              'dqDimension': dqDimension,
+              'aColNames': aColNames,
+              'aColRIDs': aColRIDs,
+              'aTerms': aTerms
+            };
+            getDataOwners("term", termDetails[i]._id, objDetails, iProcessedTerms, iFoundTerms, aStewards, processAllCollectedDataForRule);
           }
         }
       }
@@ -195,6 +207,28 @@ if (receivedRuleName !== undefined) {
   });
 }
 
+function processAllCollectedDataForRuleDS(err, aStewardsForOneObject, iProcessed, iFound, passthru, aStewards) {
+  iProcessed++;
+  aStewards.push.apply(aStewards, aStewardsForOneObject);
+  if (iProcessed === iFound) {
+    outputDSRuleMetadata(passthru.ruleName, passthru.infoGovRuleName, passthru.dqDimension, passthru.resAssets, aStewards);
+  }
+}
+
+function processJobInputs(err, resAssets, ruleName, infoGovRuleName, dqDimension, aStewards) {
+  const assetRIDs = Object.keys(resAssets);
+  let iAssetsProcessed = 0;
+  for (let i = 0; i < assetRIDs.length; i++) {
+    const objDetails = {
+      'ruleName': ruleName,
+      'infoGovRuleName': infoGovRuleName,
+      'dqDimension': dqDimension,
+      'resAssets': resAssets
+    };
+    getDataOwners(resAssets[assetRIDs[i]], assetRIDs[i], objDetails, iAssetsProcessed, assetRIDs.length, aStewards, processAllCollectedDataForRuleDS);
+  }
+}
+
 igcrest.search(dsDataRuleQ, function (err, resSearch) {
 
   if (resSearch.items.length === 0) {
@@ -214,21 +248,8 @@ igcrest.search(dsDataRuleQ, function (err, resSearch) {
       } else {
         const dqDimension = policyDetails[0]._name;
         const infoGovRuleName = infoGovRuleDetails[0]._name;
-  
         const aStewards = [];
-        getInputsForJob(rule.job_or_container._id, function(err, resAssets) {
-          const assetRIDs = Object.keys(resAssets);
-          let iAssetsProcessed = 0;
-          for (let i = 0; i < assetRIDs.length; i++) {
-            getDataOwners(resAssets[assetRIDs[i]], assetRIDs[i], {'ruleName': ruleName, 'infoGovRuleName': infoGovRuleName, 'dqDimension': dqDimension, 'resAssets': resAssets}, function(errOwner, aStewardsForAsset, passthru) {
-              iAssetsProcessed += 1;
-              aStewards.push.apply(aStewards, aStewardsForAsset);
-              if (iAssetsProcessed === assetRIDs.length) {
-                outputDSRuleMetadata(passthru.ruleName, passthru.infoGovRuleName, passthru.dqDimension, passthru.resAssets, aStewards);
-              }
-            });
-          }
-        });
+        getInputsForJob(rule.job_or_container._id, ruleName, infoGovRuleName, dqDimension, aStewards, processJobInputs);
       }
   
     }
@@ -237,7 +258,7 @@ igcrest.search(dsDataRuleQ, function (err, resSearch) {
 
 });
 
-function getInputsForJob(jobRID, callback) {
+function getInputsForJob(jobRID, ruleName, infoGovRuleName, dqDimension, aStewards, callback) {
   igcrest.getAssetPropertiesById(jobRID, "dsjob", ["reads_from_(design)", "reads_from_(operational)"], 100, true, function(err, resJob) {
 
     let errJob = err;
@@ -257,26 +278,24 @@ function getInputsForJob(jobRID, callback) {
         inputAssets[inputAssetOperational._id] = inputAssetOperational._type;
       }
     }
-    callback(errJob, inputAssets);
-    return inputAssets;
+    return callback(errJob, inputAssets, ruleName, infoGovRuleName, dqDimension, aStewards);
 
   });
 }
 
-function getDataOwners(type, rid, passthru, callback) {
+function getDataOwners(type, rid, passthru, iProcessed, iFound, aStewardsSoFar, callback) {
   igcrest.getAssetPropertiesById(rid, type, ["stewards"], 100, true, function(err, resAsset) {
     let errAsset = err;
-    const aStewards = [];
+    const aStewardsForAsset = [];
     if (resAsset === undefined || (errAsset !== null && errAsset.startsWith("WARN: No assets found"))) {
       errAsset = "Unable to find a " + type + " with RID = " + rid;
     } else {
       const stewards = resAsset.stewards.items;
       for (let j = 0; j < stewards.length; j++) {
-        aStewards.push(stewards[j]._name);
+        aStewardsForAsset.push(stewards[j]._name);
       }
     }
-    callback(errAsset, aStewards, passthru);
-    return aStewards;
+    return callback(errAsset, aStewardsForAsset, iProcessed, iFound, passthru, aStewardsSoFar);
   });
 }
 
