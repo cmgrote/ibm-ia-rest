@@ -16,6 +16,8 @@
  * limitations under the License.
  */
 
+"use strict";
+
 /**
  * @file Refresh the metadata handled by the specified import areas
  * @license Apache-2.0
@@ -29,11 +31,11 @@
  * ./refreshProjectMetadata.js -t 24 -d hostname:9445 -u isadmin -p isadmin
  */
 
-var iarest = require('ibm-ia-rest');
+const iarest = require('../');
 
 // Command-line setup
-var yargs = require('yargs');
-var argv = yargs
+const yargs = require('yargs');
+const argv = yargs
     .usage('Usage: $0 -n <name> -x <description> -t <numberOfHours> -d <host>:<port> -u <user> -p <password>')
     .option('n', {
       alias: 'name',
@@ -76,31 +78,36 @@ var argv = yargs
     .argv;
 
 // Base settings
-var bContinueOnError = true;
-var host_port = argv.domain.split(":");
-var lastRefreshTime = argv.time;
+const host_port = argv.domain.split(":");
+const lastRefreshTime = argv.time;
 
 iarest.setAuth(argv.deploymentUser, argv.deploymentUserPassword);
 iarest.setServer(host_port[0], host_port[1]);
 
-var prjName = argv.name;
-var prjDesc = argv.desc;
+const prjName = argv.name;
+const prjDesc = argv.desc;
 
-var now = new Date();
-var addAfter = new Date();
+const now = new Date();
+let addAfter = null;
 if (lastRefreshTime !== undefined && lastRefreshTime !== "") {
+  addAfter = new Date();
   addAfter = addAfter.setHours(now.getHours() - lastRefreshTime);
 }
 
+function checkForErrorsAndExit(err) {
+  if (err !== undefined && err !== null && err !== "") {
+    console.error("  status: error --> " + err);
+    process.exit(1);
+  }
+}
+
 iarest.addIADBToIgnoreList(function(err, resIgnore) {
+  checkForErrorsAndExit(err, resIgnore);
   iarest.getProjectList(function(err, resList) {
+    checkForErrorsAndExit(err, resList);
     iarest.createOrUpdateAnalysisProject(prjName, prjDesc, addAfter, function(err, results) {
-      if (err !== undefined && err !== null && err !== "") {
-        console.error("  status: error --> " + err);
-        process.exit(1);
-      } else {
-        console.log("  status: " + results);
-      }
+      checkForErrorsAndExit(err, results);
+      console.log("  status: " + results);
     });
   });
 });

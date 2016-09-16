@@ -16,6 +16,8 @@
  * limitations under the License.
  */
 
+"use strict";
+
 /**
  * @file Retrieve all of the metadata related to a particular data rule
  * @license Apache-2.0
@@ -29,11 +31,11 @@
  * ./getMetadataForExecutableDataRules.js -n 'IndustryCodeMustExist' -d hostname:9445 -u isadmin -p isadmin
  */
 
-var igcrest = require('ibm-igc-rest');
+const igcrest = require('ibm-igc-rest');
 
 // Command-line setup
-var yargs = require('yargs');
-var argv = yargs
+const yargs = require('yargs');
+const argv = yargs
     .usage('Usage: $0 -n <name> -d <host>:<port> -u <user> -p <password>')
     .option('n', {
       alias: 'name',
@@ -64,23 +66,21 @@ var argv = yargs
     .argv;
 
 // Base settings
-var bContinueOnError = true;
-var host_port = argv.domain.split(":");
-var lastRefreshTime = argv.time;
+const host_port = argv.domain.split(":");
 
 igcrest.setAuth(argv.deploymentUser, argv.deploymentUserPassword);
 igcrest.setServer(host_port[0], host_port[1]);
 
-var receivedRuleName = argv.name;
+const receivedRuleName = argv.name;
 
-var iaDataRuleQ = {
+const iaDataRuleQ = {
   "pageSize": "10000",
   "properties": [ "name", "implements_rules", "implements_rules.referencing_policies", "implements_rules.governs_assets", "implemented_bindings", "implemented_bindings.assigned_to_terms", "implemented_bindings.assigned_to_terms.stewards" ],
   "types": [ "data_rule" ]
 };
 
 if (receivedRuleName !== undefined) {
-  iaDataRuleQ["where"] = {
+  iaDataRuleQ.where = {
     "operator": "and",
     "conditions":
     [
@@ -102,60 +102,60 @@ if (receivedRuleName !== undefined) {
 
 igcrest.search(iaDataRuleQ, function (err, resSearch) {
 
-  if (resSearch.items.length == 0) {
+  if (resSearch.items.length === 0) {
     console.warn("WARN: Did not find any Data Rules with the name '" + receivedRuleName + "'.");
   } else {
 
-    for (var r = 0; r < resSearch.items.length; r++) {
+    for (let r = 0; r < resSearch.items.length; r++) {
 
-      var rule = resSearch.items[r];
-      var ruleName = rule._name;
-      var policyDetails = rule["implements_rules.referencing_policies"].items;
-      var infoGovRuleDetails = rule["implements_rules"].items;
-      var termDetails = rule["implemented_bindings.assigned_to_terms"].items;
-      var governedAssets = rule["implements_rules.governs_assets"].items;
-      var bindingDetails = rule["implemented_bindings"].items;
+      const rule = resSearch.items[r];
+      const ruleName = rule._name;
+      const policyDetails = rule["implements_rules.referencing_policies"].items;
+      const infoGovRuleDetails = rule.implements_rules.items;
+      const termDetails = rule["implemented_bindings.assigned_to_terms"].items;
+      const governedAssets = rule["implements_rules.governs_assets"].items;
+      const bindingDetails = rule.implemented_bindings.items;
 
-      if (policyDetails.length == 0 || infoGovRuleDetails.length == 0 || bindingDetails.length == 0) {
+      if (policyDetails.length === 0 || infoGovRuleDetails.length === 0 || bindingDetails.length === 0) {
         console.warn("WARN: Rule '" + ruleName + "' is missing one or more required relationships.");
       } else {
-        var dqDimension = policyDetails[0]._name;
-        var infoGovRuleName = infoGovRuleDetails[0]._name;
-        var aColNames = [];
-        var aColRIDs = [];
-        for (var i = 0; i < bindingDetails.length; i++) {
+        const dqDimension = policyDetails[0]._name;
+        const infoGovRuleName = infoGovRuleDetails[0]._name;
+        const aColNames = [];
+        const aColRIDs = [];
+        for (let i = 0; i < bindingDetails.length; i++) {
           aColNames.push(bindingDetails[i]._name);
           aColRIDs.push(bindingDetails[i]._id);
         }
 //        var colName = bindingDetails[0]._name;
 //        var colRID = bindingDetails[0]._id;
     
-        var aTerms = [];
-        var aStewards = [];
-        var iFoundTerms = 0;
-        var iProcessedTerms = 0;
-        if (termDetails.length == 0) {
-          for (var i = 0; i < governedAssets.length; i++) {
+        const aTerms = [];
+        const aStewards = [];
+        let iFoundTerms = 0;
+        const iProcessedTerms = 0;
+        if (termDetails.length === 0) {
+          for (let i = 0; i < governedAssets.length; i++) {
             if (governedAssets[i]._type === "term") {
               iFoundTerms++;
               aTerms.push(governedAssets[i]._name);
               getDataOwners("term", governedAssets[i]._id, {'ruleName': ruleName, 'infoGovRuleName': infoGovRuleName, 'dqDimension': dqDimension, 'aColNames': aColNames, 'aColRIDs': aColRIDs, 'aTerms': aTerms, 'iFoundTerms': iFoundTerms, 'iProcessedTerms': iProcessedTerms}, function(err, aStewardsForATerm, passthru) {
                 passthru.iProcessedTerms++;
                 aStewards.push.apply(aStewards, aStewardsForATerm);
-                if (passthru.iProcessedTerms == passthru.iFoundTerms) {
+                if (passthru.iProcessedTerms === passthru.iFoundTerms) {
                   outputRuleMetadata(passthru.ruleName, passthru.infoGovRuleName, passthru.dqDimension, passthru.aColNames, passthru.aColRIDs, passthru.aTerms, aStewards);
                 }
               });
             }
           }
         } else {
-          for (var i = 0; i < termDetails.length; i++) {
+          for (let i = 0; i < termDetails.length; i++) {
             iFoundTerms++;
             aTerms.push(termDetails[i]._name);
             getDataOwners("term", termDetails[i]._id, {'ruleName': ruleName, 'infoGovRuleName': infoGovRuleName, 'dqDimension': dqDimension, 'aColNames': aColNames, 'aColRIDs': aColRIDs, 'aTerms': aTerms, 'iFoundTerms': iFoundTerms, 'iProcessedTerms': iProcessedTerms}, function(err, aStewardsForATerm, passthru) {
               passthru.iProcessedTerms++;
               aStewards.push.apply(aStewards, aStewardsForATerm);
-              if (passthru.iProcessedTerms == passthru.iFoundTerms) {
+              if (passthru.iProcessedTerms === passthru.iFoundTerms) {
                 outputRuleMetadata(passthru.ruleName, passthru.infoGovRuleName, passthru.dqDimension, passthru.aColNames, passthru.aColRIDs, passthru.aTerms, aStewards);
               }
             });
@@ -169,7 +169,7 @@ igcrest.search(iaDataRuleQ, function (err, resSearch) {
 
 });
 
-var dsDataRuleQ = {
+const dsDataRuleQ = {
   "pageSize": "10000",
   "properties": [ "name", "implements_rules", "implements_rules.referencing_policies", "implements_rules.governs_assets", "job_or_container" ],
   "types": [ "stage" ],
@@ -197,33 +197,33 @@ if (receivedRuleName !== undefined) {
 
 igcrest.search(dsDataRuleQ, function (err, resSearch) {
 
-  if (resSearch.items.length == 0) {
+  if (resSearch.items.length === 0) {
     console.warn("WARN: Did not find any Data Rule Stage with the name '" + receivedRuleName + "'.");
   } else {
 
-    for (var r = 0; r < resSearch.items.length; r++) {
+    for (let r = 0; r < resSearch.items.length; r++) {
 
-      var rule = resSearch.items[r];
-      var ruleName = rule._name;
-      var policyDetails = rule["implements_rules.referencing_policies"].items;
-      var infoGovRuleDetails = rule["implements_rules"].items;
-      var governedAssets = rule["implements_rules.governs_assets"].items;
+      const rule = resSearch.items[r];
+      const ruleName = rule._name;
+      const policyDetails = rule["implements_rules.referencing_policies"].items;
+      const infoGovRuleDetails = rule.implements_rules.items;
+      //const governedAssets = rule["implements_rules.governs_assets"].items;
 
-      if (policyDetails.length == 0 || infoGovRuleDetails.length == 0) {
+      if (policyDetails.length === 0 || infoGovRuleDetails.length === 0) {
         console.warn("WARN: Rule '" + ruleName + "' is missing one or more required relationships.");
       } else {
-        var dqDimension = policyDetails[0]._name;
-        var infoGovRuleName = infoGovRuleDetails[0]._name;
+        const dqDimension = policyDetails[0]._name;
+        const infoGovRuleName = infoGovRuleDetails[0]._name;
   
-        var aStewards = [];
-        getInputsForJob(rule["job_or_container"]._id, function(err, resAssets) {
-          var assetRIDs = Object.keys(resAssets);
-          var iAssetsProcessed = 0;
-          for (var i = 0; i < assetRIDs.length; i++) {
+        const aStewards = [];
+        getInputsForJob(rule.job_or_container._id, function(err, resAssets) {
+          const assetRIDs = Object.keys(resAssets);
+          let iAssetsProcessed = 0;
+          for (let i = 0; i < assetRIDs.length; i++) {
             getDataOwners(resAssets[assetRIDs[i]], assetRIDs[i], {'ruleName': ruleName, 'infoGovRuleName': infoGovRuleName, 'dqDimension': dqDimension, 'resAssets': resAssets}, function(errOwner, aStewardsForAsset, passthru) {
               iAssetsProcessed += 1;
               aStewards.push.apply(aStewards, aStewardsForAsset);
-              if (iAssetsProcessed == assetRIDs.length) {
+              if (iAssetsProcessed === assetRIDs.length) {
                 outputDSRuleMetadata(passthru.ruleName, passthru.infoGovRuleName, passthru.dqDimension, passthru.resAssets, aStewards);
               }
             });
@@ -240,20 +240,20 @@ igcrest.search(dsDataRuleQ, function (err, resSearch) {
 function getInputsForJob(jobRID, callback) {
   igcrest.getAssetPropertiesById(jobRID, "dsjob", ["reads_from_(design)", "reads_from_(operational)"], 100, true, function(err, resJob) {
 
-    var errJob = err;
-    var inputAssets = {};
+    let errJob = err;
+    const inputAssets = {};
 
     if (resJob === undefined) {
       errJob = "Unable to find job with RID = " + jobRID;
     } else {
-      var inputAssetsDesign = resJob["reads_from_(design)"].items;
-      var inputAssetsOperational = resJob["reads_from_(operational)"].items;
-      for (var i = 0; i < inputAssetsDesign.length; i++) {
-        var inputAssetDesign = inputAssetsDesign[i];
+      const inputAssetsDesign = resJob["reads_from_(design)"].items;
+      const inputAssetsOperational = resJob["reads_from_(operational)"].items;
+      for (let i = 0; i < inputAssetsDesign.length; i++) {
+        const inputAssetDesign = inputAssetsDesign[i];
         inputAssets[inputAssetDesign._id] = inputAssetDesign._type;
       }
-      for (var i = 0; i < inputAssetsOperational.length; i++) {
-        var inputAssetOperational = inputAssetsOperational[i];
+      for (let i = 0; i < inputAssetsOperational.length; i++) {
+        const inputAssetOperational = inputAssetsOperational[i];
         inputAssets[inputAssetOperational._id] = inputAssetOperational._type;
       }
     }
@@ -265,13 +265,13 @@ function getInputsForJob(jobRID, callback) {
 
 function getDataOwners(type, rid, passthru, callback) {
   igcrest.getAssetPropertiesById(rid, type, ["stewards"], 100, true, function(err, resAsset) {
-    var errAsset = err;
-    var aStewards = [];
+    let errAsset = err;
+    const aStewards = [];
     if (resAsset === undefined || (errAsset !== null && errAsset.startsWith("WARN: No assets found"))) {
       errAsset = "Unable to find a " + type + " with RID = " + rid;
     } else {
-      var stewards = resAsset.stewards.items;
-      for (var j = 0; j < stewards.length; j++) {
+      const stewards = resAsset.stewards.items;
+      for (let j = 0; j < stewards.length; j++) {
         aStewards.push(stewards[j]._name);
       }
     }

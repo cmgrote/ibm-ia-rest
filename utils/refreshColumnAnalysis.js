@@ -16,6 +16,8 @@
  * limitations under the License.
  */
 
+"use strict";
+
 /**
  * @file Refresh the column analysis for any assets in the specified import area
  * @license Apache-2.0
@@ -27,12 +29,12 @@
  * ./refreshColumnAnalysis.js -t 48 -d hostname:9445 -u isadmin -p isadmin
  */
 
-var iarest = require('ibm-ia-rest');
-var ProgressBar = require('progress');
+const iarest = require('ibm-ia-rest');
+const ProgressBar = require('progress');
 
 // Command-line setup
-var yargs = require('yargs');
-var argv = yargs
+const yargs = require('yargs');
+const argv = yargs
     .usage('Usage: $0 -n <name> -t <timeInHours> -d <host>:<port> -u <user> -p <password>')
     .option('n', {
       alias: 'name',
@@ -69,19 +71,19 @@ var argv = yargs
     .argv;
 
 // Base settings
-var host_port = argv.domain.split(":");
+const host_port = argv.domain.split(":");
 iarest.setAuth(argv.deploymentUser, argv.deploymentUserPassword);
 iarest.setServer(host_port[0], host_port[1]);
 
-var projectName = argv.name;
-var lastRefreshTime = argv.time;
-var now = new Date();
-var staleBefore = new Date();
+const projectName = argv.name;
+const lastRefreshTime = argv.time;
+const now = new Date();
+let staleBefore = new Date();
 if (lastRefreshTime !== undefined && lastRefreshTime !== "") {
   staleBefore = staleBefore.setHours(now.getHours() - lastRefreshTime);
 }
 
-var bar = new ProgressBar('  analyzing [:bar] :percent  (:execId)', {
+const bar = new ProgressBar('  analyzing [:bar] :percent  (:execId)', {
   complete: '=',
   incomplete: ' ',
   width: 20,
@@ -94,16 +96,15 @@ iarest.getStaleAnalysisResults(projectName, staleBefore, function(err, aStaleSou
   console.log("  running column analysis for " + aStaleSources.length + " sources.");
   iarest.runColumnAnalysisForSources(projectName, aStaleSources, function(err, results) {
 
-    var aIDs = iarest.getExecutionIDsFromResponse(results);
-  
-    for (var i = 0; i < aIDs.length; i++) {
-      var execId = aIDs[i];
-  
-      var timer = setInterval(waitForCompletion, 10000, execId, function(status, resExec) {
+    const aIDs = iarest.getExecutionIDsFromResponse(results);
+    // TODO: confirm if there will always only be a single execution ID (?)
+    if (aIDs.length > 0) {
+      const execId = aIDs[0];
+      const timer = setInterval(waitForCompletion, 10000, execId, function (status) {
   
         clearInterval(timer);
         if (status === "successful") {
-  
+      
           console.log("Publishing results...");
           iarest.publishResultsForSources(projectName, aStaleSources, function(err, statusPublish) {
         
@@ -112,15 +113,15 @@ iarest.getStaleAnalysisResults(projectName, staleBefore, function(err, aStaleSou
             iarest.reindexThinClient(25, 100, false, true, function(err, resIndex) {
               console.log("  status: " + resIndex);
             });
-  
+      
           });
-  
+      
         } else {
           process.exit(1);
         }
-  
+      
       });
-  
+
     }
 
   });
@@ -129,8 +130,8 @@ iarest.getStaleAnalysisResults(projectName, staleBefore, function(err, aStaleSou
 
 function waitForCompletion(id, callback) {  
   iarest.getTaskStatus(id, function(err, results) {
-    var status = results.status;
-    var progress = results.progress;
+    const status = results.status;
+    const progress = results.progress;
     if (status === "running") {
       bar.update(progress/100, {'execId': results.executionId});
     } else if (status === "successful") {

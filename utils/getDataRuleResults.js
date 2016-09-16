@@ -16,6 +16,8 @@
  * limitations under the License.
  */
 
+"use strict";
+
 /**
  * @file Gets the output table from the execution of a Data Rule or Data Rule Set
  * @license Apache-2.0
@@ -27,12 +29,12 @@
  * ./getDataRuleResults.js -n 'IndustryCodeMustExist' -d hostname:9445 -u isadmin -p isadmin
  */
 
-var iarest = require('ibm-ia-rest');
-var Table = require('cli-table');
+const iarest = require('ibm-ia-rest');
+const Table = require('cli-table');
 
 // Command-line setup
-var yargs = require('yargs');
-var argv = yargs
+const yargs = require('yargs');
+const argv = yargs
     .usage('Usage: $0 -i <project> -n <name> -d <host>:<port> -u <user> -p <password>')
     .option('i', {
       alias: 'project',
@@ -68,26 +70,25 @@ var argv = yargs
     .argv;
 
 // Base settings
-var bContinueOnError = true;
-var host_port = argv.domain.split(":");
+const host_port = argv.domain.split(":");
 
 iarest.setAuth(argv.deploymentUser, argv.deploymentUserPassword);
 iarest.setServer(host_port[0], host_port[1]);
 
-var projectName = argv.project;
-var receivedRuleName = argv.name;
+const projectName = argv.project;
+const receivedRuleName = argv.name;
 
 iarest.getRuleExecutionFailedRecordsFromLastRun(projectName, receivedRuleName, null, function(err, aResults) {
 
   if (aResults.length > 0) {
-    var aColNames = Object.keys(aResults[0]);
-    var table = new Table({
+    const aColNames = Object.keys(aResults[0]);
+    const table = new Table({
       head: aColNames
     });
-    for (var i = 0; i < aResults.length; i++) {
-      var rowData = [];
-      for (var j = 0; j < aColNames.length; j++) {
-        var value = aResults[i][aColNames[j]];
+    for (let i = 0; i < aResults.length; i++) {
+      const rowData = [];
+      for (let j = 0; j < aColNames.length; j++) {
+        const value = aResults[i][aColNames[j]];
         rowData.push(value);
       }
       table.push(rowData);
