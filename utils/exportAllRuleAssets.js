@@ -56,11 +56,6 @@ const argv = yargs
       demand: true, requiresArg: true, type: 'string'
     })
     .env('DS')
-    .option('d', {
-      alias: 'domain',
-      describe: 'Host and port for invoking IA REST',
-      demand: true, requiresArg: true, type: 'string'
-    })
     .option('u', {
       alias: 'deployment-user',
       describe: 'User for invoking IA REST',
