@@ -1831,6 +1831,7 @@ exports.getRuleExecutionFailedRecordsFromLastRun = function(projectName, ruleOrS
       throw new Error(err);
     } else {
       const aRows = [];
+      const colMap = {};
       const resDoc = new xmldom.DOMParser().parseFromString(resRecords);
       const nlCols = xpath.select("//*[local-name(.)='OutputColumn']", resDoc);
       const nlRows = xpath.select("//*[local-name(.)='Row']", resDoc);
@@ -1838,6 +1839,7 @@ exports.getRuleExecutionFailedRecordsFromLastRun = function(projectName, ruleOrS
       for (let i = 0; i < nlCols.length; i++) {
         const colName = nlCols[i].getAttribute("name");
         aColNames.push(colName);
+        colMap[colName] = nlCols[i].getAttribute("value");
       }
       for (let i = 0; i < nlRows.length; i++) {
         const nlCells = nlRows[i].getElementsByTagName("Value");
@@ -1849,7 +1851,7 @@ exports.getRuleExecutionFailedRecordsFromLastRun = function(projectName, ruleOrS
         }
         aRows.push(rowVals);
       }
-      callback(err, aRows);
+      callback(err, aRows, colMap);
       return aRows;
     }
   });
@@ -1935,6 +1937,7 @@ exports.getRuleExecutionResults = function(projectName, ruleOrSetName, bLatestOn
  * @callback recordsCallback
  * @param {string} errorMessage - any error message, or null if no errors
  * @param {Object[]} records - an array of records, each record being a JSON object keyed by column name and with the value of the column for that row
+ * @param {Object} columnMap - key-value pairs mapping column names to their context (e.g. full identity in the case of database columns like RecordPK)
  */
 
 /**
