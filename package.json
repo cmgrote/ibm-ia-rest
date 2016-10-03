@@ -1,12 +1,13 @@
 {
   "name": "ibm-ia-rest",
-  "version": "0.0.3",
+  "version": "1.0.0",
   "description": "Library to use IBM Information Analyzer REST API",
   "main": "./index.js",
   "files": [
     "index.js",
     "docs",
     "utils",
+    "classes",
     "LICENSE"
   ],
   "dependencies": {
@@ -14,7 +15,8 @@
     "xpath": ">=0.0.23",
     "progress": ">=1.1.8",
     "yargs": ">=5.0.0",
-    "shelljs": ">=0.7.4"
+    "shelljs": ">=0.7.4",
+    "ibm-iis-commons": ">=0.0.1"
   },
   "devDependencies": {
     "jsdoc": "^3.4.0",
