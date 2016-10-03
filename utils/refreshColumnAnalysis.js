@@ -22,6 +22,7 @@
  * @file Refresh the column analysis for any assets in the specified import area
  * @license Apache-2.0
  * @requires ibm-ia-rest
+ * @requires ibm-iis-commons
  * @requires progress
  * @requires yargs
  * @example
@@ -30,6 +31,7 @@
  */
 
 const iarest = require('ibm-ia-rest');
+const commons = require('ibm-iis-commons');
 const ProgressBar = require('progress');
 
 // Command-line setup
@@ -72,8 +74,8 @@ const argv = yargs
 
 // Base settings
 const host_port = argv.domain.split(":");
-iarest.setAuth(argv.deploymentUser, argv.deploymentUserPassword);
-iarest.setServer(host_port[0], host_port[1]);
+const restConnect = new commons.RestConnection(argv.deploymentUser, argv.deploymentUserPassword, host_port[0], host_port[1]);
+iarest.setConnection(restConnect);
 
 const projectName = argv.name;
 const lastRefreshTime = argv.time;

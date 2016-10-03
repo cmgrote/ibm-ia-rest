@@ -22,6 +22,7 @@
  * @file Gets the output table from the execution of a Data Rule or Data Rule Set
  * @license Apache-2.0
  * @requires ibm-ia-rest
+ * @requires ibm-iis-commons
  * @requires yargs
  * @example
  * @example
@@ -30,6 +31,7 @@
  */
 
 const iarest = require('ibm-ia-rest');
+const commons = require('ibm-iis-commons');
 const Table = require('cli-table');
 
 // Command-line setup
@@ -72,8 +74,8 @@ const argv = yargs
 // Base settings
 const host_port = argv.domain.split(":");
 
-iarest.setAuth(argv.deploymentUser, argv.deploymentUserPassword);
-iarest.setServer(host_port[0], host_port[1]);
+const restConnect = new commons.RestConnection(argv.deploymentUser, argv.deploymentUserPassword, host_port[0], host_port[1]);
+iarest.setConnection(restConnect);
 
 const projectName = argv.project;
 const receivedRuleName = argv.name;

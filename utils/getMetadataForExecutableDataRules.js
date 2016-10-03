@@ -22,6 +22,7 @@
  * @file Retrieve all of the metadata related to a particular data rule
  * @license Apache-2.0
  * @requires ibm-igc-rest
+ * @requires ibm-iis-commons
  * @requires yargs
  * @example
  * // retrieves all of the metadata related to all executable rules
@@ -32,6 +33,7 @@
  */
 
 const igcrest = require('ibm-igc-rest');
+const commons = require('ibm-iis-commons');
 
 // Command-line setup
 const yargs = require('yargs');
@@ -68,8 +70,8 @@ const argv = yargs
 // Base settings
 const host_port = argv.domain.split(":");
 
-igcrest.setAuth(argv.deploymentUser, argv.deploymentUserPassword);
-igcrest.setServer(host_port[0], host_port[1]);
+const restConnect = new commons.RestConnection(argv.deploymentUser, argv.deploymentUserPassword, host_port[0], host_port[1]);
+igcrest.setConnection(restConnect);
 
 const receivedRuleName = argv.name;
 

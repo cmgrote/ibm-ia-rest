@@ -23,6 +23,7 @@
  * @license Apache-2.0
  * @requires ibm-ia-rest
  * @requires yargs
+ * @requires ibm-iis-commons
  * @example
  * // refreshes all of the metadata that can be found in IGC into the Information Analyzer project (by default called "Automated Profiling")
  * ./refreshProjectMetadata.js -d hostname:9445 -u isadmin -p isadmin
@@ -32,6 +33,7 @@
  */
 
 const iarest = require('../');
+const commons = require('ibm-iis-commons');
 
 // Command-line setup
 const yargs = require('yargs');
@@ -81,8 +83,8 @@ const argv = yargs
 const host_port = argv.domain.split(":");
 const lastRefreshTime = argv.time;
 
-iarest.setAuth(argv.deploymentUser, argv.deploymentUserPassword);
-iarest.setServer(host_port[0], host_port[1]);
+const restConnect = new commons.RestConnection(argv.deploymentUser, argv.deploymentUserPassword, host_port[0], host_port[1]);
+iarest.setConnection(restConnect);
 
 const prjName = argv.name;
 const prjDesc = argv.desc;
