@@ -23,21 +23,21 @@
  * @license Apache-2.0
  * @requires ibm-ia-rest
  * @requires ibm-iis-commons
- * @requires progress
+ * @requires ibm-iis-kafka
  * @requires yargs
  * @example
  * // refreshes column analysis for all columns and file fields with results older than 48 hours, within the "Automated Profiling" project (by default)
- * ./refreshColumnAnalysis.js -t 48 -d hostname:9445 -u isadmin -p isadmin
+ * ./refreshColumnAnalysis.js -t 48 -d hostname:9445 -z hostname:52181 -u isadmin -p isadmin
  */
 
 const iarest = require('ibm-ia-rest');
 const commons = require('ibm-iis-commons');
-const ProgressBar = require('progress');
+const iiskafka = require('ibm-iis-kafka');
 
 // Command-line setup
 const yargs = require('yargs');
 const argv = yargs
-    .usage('Usage: $0 -n <name> -t <timeInHours> -d <host>:<port> -u <user> -p <password>')
+    .usage('Usage: $0 -n <name> -t <timeInHours> -d <host>:<port> -z <host>:<port> -u <user> -p <password>')
     .option('n', {
       alias: 'name',
       describe: 'Name of the Information Analyzer project',
@@ -50,6 +50,11 @@ const argv = yargs
       requiresArg: true, type: 'number'
     })
     .env('DS')
+    .option('z', {
+      alias: 'zookeeper',
+      describe: 'Host and port for Zookeeper connection to consume from Kafka',
+      demand: true, requiresArg: true, type: 'string'
+    })
     .option('d', {
       alias: 'domain',
       describe: 'Host and port for invoking IA REST',
@@ -85,63 +90,93 @@ if (lastRefreshTime !== undefined && lastRefreshTime !== "") {
   staleBefore = staleBefore.setHours(now.getHours() - lastRefreshTime);
 }
 
-const bar = new ProgressBar('  analyzing [:bar] :percent  (:execId)', {
-  complete: '=',
-  incomplete: ' ',
-  width: 20,
-  total: 100
-});
+const infosphereEventEmitter = new iiskafka.InfosphereEventEmitter(argv.zookeeper, 'automated-profiling-handler', false);
+
+let tamsToSources = {};
+let iTotalTAMs = 0;
+const tamsProcessed = [];
 
 console.log("Determining stale analyses...");
-iarest.getStaleAnalysisResults(projectName, staleBefore, function(err, aStaleSources) {
+iarest.getStaleAnalysisResults(projectName, staleBefore, function(errStale, aStaleSources) {
+  handleError("getting stale analysis results", errStale);
 
   console.log("  running column analysis for " + aStaleSources.length + " sources.");
-  iarest.runColumnAnalysisForSources(projectName, aStaleSources, function(err, results) {
+  iTotalTAMs = aStaleSources.length;
+  iarest.runColumnAnalysisForDataSources(aStaleSources, function(errExec, tamsAnalyzed) {
+    handleError("running column analysis", errExec);
 
-    const aIDs = iarest.getExecutionIDsFromResponse(results);
-    // TODO: confirm if there will always only be a single execution ID (?)
-    if (aIDs.length > 0) {
-      const execId = aIDs[0];
-      const timer = setInterval(waitForCompletion, 10000, execId, function (status) {
-  
-        clearInterval(timer);
-        if (status === "successful") {
-      
-          console.log("Publishing results...");
-          iarest.publishResultsForSources(projectName, aStaleSources, function(err, statusPublish) {
-        
-            console.log("  status: " + statusPublish);
-            console.log("Reindexing Solr for the thin client...");
-            iarest.reindexThinClient(25, 100, false, true, function(err, resIndex) {
-              console.log("  status: " + resIndex);
-            });
-      
-          });
-      
-        } else {
-          process.exit(1);
-        }
-      
-      });
-
-    }
+    // Keep a copy of the TAMs we submitted for analysis so that we can track their completion via Kafka (for auto-publishing once completed)
+    tamsToSources = tamsAnalyzed;
+    recordCompletion(null);
 
   });
 
 });
 
-function waitForCompletion(id, callback) {  
-  iarest.getTaskStatus(id, function(err, results) {
-    const status = results.status;
-    const progress = results.progress;
-    if (status === "running") {
-      bar.update(progress/100, {'execId': results.executionId});
-    } else if (status === "successful") {
-      console.log("\n  completed successfully after " + results.executionTime + " ms");
-      callback(status, results);
-    } else {
-      console.warn("\n  problem completing: " + JSON.stringify(results));
-      callback(status, results);
-    }
-  });
+// TODO: could also investigate getting further progress information via these events (all of which have tamRid)
+//      IA_DATAQUALITY_ANALYSIS_SUBMITTED
+//      IA_COLUMN_ANALYSIS_STARTED_EVENT
+//      IA_PROFILE_BATCH_COMPLETED_EVENT
+//      IA_DATAQUALITY_ANALYSIS_STARTED_EVENT
+//      IA_TABLE_RESULTS_PUBLISHED
+
+infosphereEventEmitter.on('IA_DATAQUALITY_ANALYSIS_FINISHED_EVENT', publishAnalysis);
+infosphereEventEmitter.on('IA_DATAQUALITY_ANALYSIS_FAILED_EVENT', logFailure);
+infosphereEventEmitter.on('error', function(errMsg) {
+  console.error("Received 'error' -- aborting process: " + errMsg);
+  process.exit(1);
+});
+infosphereEventEmitter.on('end', function() {
+  console.log("Event emitter stopped -- ending process.");
+  process.exit();
+});
+
+function handleError(ctxMsg, errMsg) {
+  if (typeof errMsg !== 'undefined' && errMsg !== null) {
+    console.error("Failed " + ctxMsg + " -- " + errMsg);
+    process.exit(1);
+  }
+}
+
+function logProgress(msg) {
+  console.log("  [" + (tamsProcessed.length + 1) + "/" + iTotalTAMs + "] " + msg);
+}
+
+function publishAnalysis(infosphereEvent, eventCtx, commitCallback) {
+  const projectRid = infosphereEvent.projectRid;
+  const tamRid = infosphereEvent.tamRid;
+  if (tamsToSources.hasOwnProperty(tamRid)) {
+    const objectIdentity = tamsToSources[tamRid].identity;
+    logProgress("publishing analysis results for " + objectIdentity);
+    const aTAMs = [];
+    aTAMs.push(tamRid);
+    iarest.publishResultsForDataSources(projectRid, aTAMs, function(errPublish) {
+      handleError("publishing analysis results", errPublish);
+      commitCallback(eventCtx);
+      recordCompletion(tamRid);
+    });
+  } else {
+    commitCallback(eventCtx);
+  }
+}
+
+function logFailure(infosphereEvent, eventCtx, commitCallback) {
+  const tamRid = infosphereEvent.tamRid;
+  if (tamsToSources.hasOwnProperty(tamRid)) {
+    const objectIdentity = tamsToSources[tamRid].identity;
+    logProgress("analysis failed for " + objectIdentity);
+    commitCallback(eventCtx);
+    recordCompletion(tamRid);
+  } else {
+    commitCallback(eventCtx);
+  }
+}
+
+function recordCompletion(tamRid) {
+  if (tamRid !== null) {
+    tamsProcessed.push(tamRid);
+  }
+  if (iTotalTAMs === tamsProcessed.length) {
+    infosphereEventEmitter.emit('end');
+  }
 }

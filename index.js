@@ -30,9 +30,8 @@
  * var restConnect = new commons.RestConnection("isadmin", "isadmin", "hostname", "9445");
  * iarest.setConnection(restConnect);
  * iarest.getStaleAnalysisResults("Automated Profiling", new Date(), function(errStale, aStaleSources) {
- *   iarest.runColumnAnalysisForSources("Automated Profiling", aStaleSources, function(errCA, resCA) {
- *     var aExecIDs = iarest.getExecutionIDsFromResponse(resCA);
- *     // Note that the API returns async; if you want to busy-wait you need to poll the execution ID
+ *   iarest.runColumnAnalysisForDataSources(aStaleSources, function(errExec, tamsAnalyzed) {
+ *     // Note that the API returns async; if you want to busy-wait you need to poll events on Kafka
  *   });
  * });
  */
@@ -486,6 +485,16 @@ const RestIA = (function() {
   }
   
   /**
+   * @private
+   */
+  function _getIdentityStringForFile(host, path, filename) {
+    return host + "||" + path + ":" + filename;
+  }
+  function _getIdentityStringForTable(host, database, schema, tablename) {
+    return host + "||" + database + "." + schema + "." + tablename;
+  }
+
+  /**
    * Retrieves a list of all items that should be ignored, i.e. where they are labelled with "Information Analyzer Ignore List"
    *
    * @param {itemsToIgnoreCallback} callback
@@ -675,6 +684,27 @@ const RestIA = (function() {
     });
   }
   
+  /**
+   * @private
+   * NOTE: Unfortunately the 'name' property of an analysis_project is not searchable in IGC, so no other way to do this
+   */
+  function _getProjectRIDByName(projectName, callback) {
+    const json = {
+      "pageSize": "1000",
+      "properties": [ "short_description" ],
+      "types": [ "analysis_project" ]
+    };
+    igcrest.search(json, function (err, resSearch) {
+      let projectRID = "";
+      for (let i = 0; i < resSearch.items.length && projectRID === ""; i++) {
+        if (resSearch.items[i]._name === projectName) {
+          projectRID = resSearch.items[i]._id;
+        }
+      }
+      return callback(err, projectRID);
+    });
+  }
+
   /**
    * @private
    */
@@ -991,104 +1021,132 @@ const RestIA = (function() {
    * Get a list of all of the data sources in the specified Information Analyzer project
    *
    * @param {string} projectName
-   * @param {boolean} bByColumn - true iff all detail down to column level is desired; if false will return data store + location and *.* for table / file and column-level detail
-   * @param {listCallback} callback - callback that handles the response
+   * @param {listCallback} callback - callback that handles the response (will be entries with HOST||DB.SCHEMA.TABLE and HOST||PATH:FILE)
    */
-  const getProjectDataSourceList = function(projectName, bByColumn, callback) {
+  const getProjectDataSourceList = function(projectName, callback) {
   
-    makeRequest('GET', encodeURI("/ibm/iis/ia/api/project?projectName=" + projectName), null, null, function(res, resXML) {
-      
-      let err = null;
-      if (res.statusCode !== 200) {
-        err = "Unsuccessful request " + res.statusCode;
-        console.error(err);
-        console.error('headers: ', res.headers);
-        throw new Error(err);
-      }
-  
-      const aDSs = [];
-      const resDoc = new xmldom.DOMParser().parseFromString(resXML);
-  
-      const nlDS = xpath.select("//*[local-name(.)='DataSource']", resDoc);
-      
-      for (let i = 0; i < nlDS.length; i++) {
-  
-        const nDataSource = nlDS[i];
-        const dataSourceName = nDataSource.getAttribute("name");
-        
-        const nlSchemas = nDataSource.getElementsByTagName("Schema");
-        for (let j = 0; j < nlSchemas.length; j++) {
-          const nSchema = nlSchemas.item(j);
-          const schemaName = nSchema.getAttribute("name");
-          if (!bByColumn) {
-            aDSs.push(dataSourceName + "." + schemaName + ".*.*");
+    // NOTE: this uses an internal / unpublished "DA REST API" -- subject to change without notice...
+    // (discovered using Firebug to look at all communication in the IATC)
+    // -- unfortunately there is no other way to get file information ('/ibm/iis/ia/api/project?projectName=...' only works for databases)
+
+    _getProjectRIDByName(projectName, function(errPrj, projectRID) {
+
+      const input = {
+        "params": {
+          "q":"*:*",
+          "start":0,
+          "rows":100000,
+          "mincount":0,
+          "sort":[""],
+          "facet":false,
+          "facet.field":[],
+          "facet.range":[]
+        }
+      };
+      makeRequest('POST', "/ibm/iis/dq/da/rest/v1/workspaces/" + projectRID + "/dataSets/doFilter", input, "application/json", function(res, resString) {
+
+        let err = null;
+        if (res.statusCode !== 200) {
+          err = "Unsuccessful request " + res.statusCode;
+          console.error(err);
+          console.error('headers: ', res.headers);
+          throw new Error(err);
+        }
+
+        const aDSs = [];
+        const resJSON = JSON.parse(resString);
+
+        for (let i = 0; i < resJSON.rows.length; i++) {
+          const row = resJSON.rows[i];
+          const hostName = row.HOSTNAME;
+          if (row.ISFILE) {
+            const folderName = row.FILEPATH;
+            const fileName = row.DATASETNAME;
+            const fileSource = {
+              "type": "FILE",
+              "identity": _getIdentityStringForFile(hostName, folderName, fileName),
+              "rid": row.DSID,
+              "tamRid": row.TAMRID,
+              "lastAnalyzed": row.LASTANALYZED
+            };
+            aDSs.push(fileSource);
           } else {
-            const nlTables = nSchema.getElementsByTagName("Table");
-            for (let k = 0; k < nlTables.length; k++) {
-              const nTable = nlTables.item(k);
-              const tableName = nTable.getAttribute("name");
-              const nlCols = nTable.getElementsByTagName("Column");
-              for (let l = 0; l < nlCols.length; l++) {
-                const nColumn = nlCols.item(l);
-                const columnName = nColumn.getAttribute("name");
-                aDSs.push(dataSourceName + "." + schemaName + "." + tableName + "." + columnName);
-              }
-            }
+            const dataSourceName = row.DATABASENAME;
+            const schemaName = row.SCHEMANAME;
+            const tableName = row.DATASETNAME;
+            const tableSource = {
+              "type": "TABLE",
+              "identity": _getIdentityStringForTable(hostName, dataSourceName, schemaName, tableName),
+              "rid": row.DSID,
+              "tamRid": row.TAMRID,
+              "lastAnalyzed": row.LASTANALYZED
+            };
+            aDSs.push(tableSource);
           }
         }
+
+        callback(err, aDSs);
+
+      });
+
+    });
   
-        const nlFileFolders = nDataSource.getElementsByTagName("FileFolder");
-        for (let j = 0; j < nlFileFolders.length; j++) {
-          const nFolder = nlFileFolders.item(j);
-          const folderName = nFolder.getAttribute("name");
-          if (!bByColumn) {
-            aDSs.push(dataSourceName + ":" + folderName + ":*:*");
-          } else {
-            const nlFiles = nFolder.getElementsByTagName("FileName");
-            for (let k = 0; k < nlFiles.length; k++) {
-              const nFile = nlFiles.item(k);
-              const fileName = nFile.getAttribute("name");
-              const nlCols = nFile.getElementsByTagName("Column");
-              for (let l = 0; l < nlCols.length; l++) {
-                const nColumn = nlCols.item(l);
-                const columnName = nColumn.getAttribute("name");
-                aDSs.push(dataSourceName + ":" + folderName + ":" + fileName + ":" + columnName);
-              }
-            }
-          }
+  };
+
+  /**
+   * Run a full column analysis against the list of data sources specificed (based on TAM RIDs)
+   *
+   * @param {Object[]} aDataSources - an array of data sources, as returned by getProjectDataSourceList
+   * @param {requestCallback} callback - callback that handles the response
+   */
+  const runColumnAnalysisForDataSources = function(aDataSources, callback) {
+    if (aDataSources.length > 0) {
+      const tamsToSources = {};
+      const aTAMs = [];
+      for (let i = 0; i < aDataSources.length; i++) {
+        const tamRid = aDataSources[i].tamRid;
+        aTAMs.push(tamRid);
+        tamsToSources[tamRid] = aDataSources[i];
+      }
+      const input = {
+        "tamRids": aTAMs
+      };
+      makeRequest('POST', "/ibm/iis/dq/da/rest/v1/workspaces/ec1481df.64b1b87d.a6a5f3rpa.3uf1d0s.bsk7h8.9ai6gjsspaec618j99rn2/analysis/doRun", input, 'application/json', function(res, resExec) {
+        let err = null;
+        if (res.statusCode !== 200) {
+          err = "Unsuccessful request " + res.statusCode;
+          console.error(err);
+          console.error('headers: ', res.headers);
+          throw new Error(err);
         }
-        
-      }
-  
-      callback(err, aDSs);
-  
-    });
-  
+        // resExec === {"scheduledRids":["sdp:fab70e88-1b72-4b71-9607-567c40582e63"]}
+        // but not currently aware of anything to be done with these IDs -- will instead return lookup-able TAM RID dictionary
+        return callback(err, tamsToSources, resExec);
+      });
+    } else {
+      return callback(null, {}, null);
+    }
   };
   
   /**
-   * Run a full column analysis against the data source details specificed
+   * Publish analysis results for the list of data sources specified
    *
-   * @param {string} projectName - name of the IA project
-   * @param {string} type - the type of data ["database", "file"]
-   * @param {string} [hostname] - hostname of the system containing the data to be analyzed
-   * @param {string} datasource - database (type "database") or connection (type "file")
-   * @param {string} location - data schema (type "database") or directory path (type "file")
+   * @param {string} projectRID - RID of the IA project
+   * @param {string[]} aTAMs - an array of TAM RIDs whose analysis should be published
    * @param {requestCallback} callback - callback that handles the response
    */
-  const runColumnAnalysis = function(projectName, type, hostname, datasource, location, callback) {
+  const publishResultsForDataSources = function(projectRID, aTAMs, callback) {
   
-    const proj = new Project(projectName);
-    const ca = new ColumnAnalysis(proj, true, "CAPTURE_ALL", 5000, 10000, true);
-  
-    if (type === "database") {
-      ca.addColumn(datasource, location, "*", "*", hostname);
-    } else if (type === "file") {
-      ca.addFileField(datasource, location, "*", "*", hostname);
-    }
-  
-    const input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-    makeRequest('POST', "/ibm/iis/ia/api/executeTasks", input, 'text/xml', function(res, resExec) {
+    // NOTE: this uses an internal / unpublished "DA REST API" -- subject to change without notice...
+    // (discovered using Firebug to look at all communication in the IATC)
+    // -- unfortunately there is no other way to do this for files (published IA REST APIs only work for databases)
+
+    const input = {
+      "tamRids": aTAMs
+    };
+
+    makeRequest('POST', "/ibm/iis/dq/da/rest/v1/workspaces/" + projectRID + "/dataSets/doPublish", input, "application/json", function(res) {
+
       let err = null;
       if (res.statusCode !== 200) {
         err = "Unsuccessful request " + res.statusCode;
@@ -1096,125 +1154,13 @@ const RestIA = (function() {
         console.error('headers: ', res.headers);
         throw new Error(err);
       }
-      callback(err, resExec);
-      return resExec;
+
+      return callback(err, "successful");
+
     });
-  
+
   };
-  
-  /**
-   * Run a full column analysis against the list of data sources specificed
-   *
-   * @param {string} projectName - name of the IA project
-   * @param {string[]} aSources - an array of qualified data source names (DB.SCHEMA.TABLE for databases, HOST:PATH:FILENAME for files)
-   * @param {requestCallback} callback - callback that handles the response
-   */
-  const runColumnAnalysisForSources = function(projectName, aSources, callback) {
-  
-    const proj = new Project(projectName);
-    const ca = new ColumnAnalysis(proj, true, "CAPTURE_ALL", 5000, 10000, true);
-  
-    for (let i = 0; i < aSources.length; i++) {
-      const sSourceName = aSources[i];
-      if (sSourceName.indexOf(":") > -1) {
-        const aTokens = sSourceName.split(":");
-        ca.addFileField(aTokens[0], aTokens[1], aTokens[2], "*");
-      } else if (sSourceName.indexOf(".") > -1) {
-        const aTokens = sSourceName.split(".");
-        ca.addColumn(aTokens[0], aTokens[1], aTokens[2], "*");
-      }
-    }
-  
-    const input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-    makeRequest('POST', "/ibm/iis/ia/api/executeTasks", input, 'text/xml', function(res, resExec) {
-      let err = null;
-      if (res.statusCode !== 200) {
-        err = "Unsuccessful request " + res.statusCode;
-        console.error(err);
-        console.error('headers: ', res.headers);
-        throw new Error(err);
-      }
-      callback(err, resExec);
-      return resExec;
-    });
-  
-  };
-  
-  /**
-   * Publish analysis results
-   *
-   * @param {string} projectName - name of the IA project
-   * @param {string} type - the type of data ["database", "file"]
-   * @param {string} [hostname] - hostname of the system with analysis results to be published
-   * @param {string} datasource - database (type "database") or connection (type "file")
-   * @param {string} location - data schema (type "database") or directory path (type "file")
-   * @param {requestCallback} callback - callback that handles the response
-   */
-  const publishResults = function(projectName, type, hostname, datasource, location, callback) {
-  
-    const proj = new Project(projectName);
-    const pr = new PublishResults(proj);
-  
-    if (type === "database") {
-      pr.addTable(datasource, location, "*", hostname);
-    } else if (type === "file") {
-      pr.addFile(datasource, location, "*", hostname);
-    }
-  
-    const input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-    makeRequest('POST', "/ibm/iis/ia/api/publishResults", input, 'text/xml', function(res, resExec) {
-      let err = null;
-      if (res.statusCode !== 200) {
-        err = "Unsuccessful request " + res.statusCode;
-        console.error(err);
-        console.error('headers: ', res.headers);
-        throw new Error(err);
-      }
-      callback(err, resExec);
-      return resExec;
-    });
-  
-  };
-  
-  /**
-   * Publish analysis results for the list of data sources specificed
-   *
-   * @param {string} projectName - name of the IA project
-   * @param {string[]} aSources - an array of qualified data source names (DB.SCHEMA.TABLE for databases, HOST:PATH:FILENAME for files)
-   * @param {requestCallback} callback - callback that handles the response
-   */
-  const publishResultsForSources = function(projectName, aSources, callback) {
-  
-    const proj = new Project(projectName);
-    const pr = new PublishResults(proj);
-  
-    for (let i = 0; i < aSources.length; i++) {
-      const sSourceName = aSources[i];
-      if (sSourceName.indexOf(":") > -1) {
-        const aTokens = sSourceName.split(":");
-        pr.addFile(aTokens[0], aTokens[1], aTokens[2], null);
-      } else if (sSourceName.indexOf(".") > -1) {
-        const aTokens = sSourceName.split(".");
-        pr.addTable(aTokens[0], aTokens[1], aTokens[2], null);
-      }
-    }
-  
-    const input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
-    //exports.makeRequest('POST', "/ibm/iis/ia/api/publishResults", input, 'text/xml', function(res, resExec) {
-    makeRequest('POST', "/ibm/iis/ia/api/publishResults", input, 'text/xml', function(res) {
-      let err = null;
-      if (res.statusCode !== 200) {
-        err = "Unsuccessful request " + res.statusCode;
-        console.error(err);
-        console.error('headers: ', res.headers);
-        throw new Error(err);
-      }
-      callback(err, "successful");
-      return "successful";
-    });
-  
-  };
-  
+
   /**
    * Retrieve previously published analysis results
    *
@@ -1225,192 +1171,28 @@ const RestIA = (function() {
   const getStaleAnalysisResults = function(projectName, timeToConsiderStale, callback) {
   
     // Get a list of all project data sources (everything we should check for staleness)
-    getProjectDataSourceList(projectName, true, function (err, aDataSources) {
+    getProjectDataSourceList(projectName, function (err, aDataSources) {
   
-      //const project = new Project(projectName);
-      const projectTables = {};
-      const projectFiles = {};
+      const aToAnalyze = [];
+
       for (let i = 0; i < aDataSources.length; i++) {
-        let sDataSource = aDataSources[i];
-        if (sDataSource.indexOf(":") > -1) {
-          sDataSource = sDataSource.substring(0, sDataSource.lastIndexOf(":"));
-          projectFiles[sDataSource] = true;
-        } else if (sDataSource.indexOf(".") > -1) {
-          sDataSource = sDataSource.substring(0, sDataSource.lastIndexOf("."));
-          projectTables[sDataSource] = true;
+        const dataSource = aDataSources[i];
+        if (dataSource.lastAnalyzed !== null) {
+          const lastAnalysis = new Date(dataSource.lastAnalyzed);
+          if (lastAnalysis <= timeToConsiderStale) {
+            aToAnalyze.push(dataSource);
+          }
+        } else {
+          aToAnalyze.push(dataSource);
         }
       }
-  
-      // Get a list of objects from IGC that are stale in general (this should be faster at-scale than generally)
-      // querying every single one of the data sources above
-      // NOTE: it is necessary to do this at table / file level, as the lower level does not allow retrieving contextual information (full identity)
-      const staleTables = {
-        "pageSize": "1000000",
-        "properties": [ "name", "modified_on", "database_table_or_view.name", "database_table_or_view.database_schema.name", "database_table_or_view.database_schema.database.name", "database_table_or_view.database_schema.database.host.name" ],
-        "types": [ "table_analysis" ]
-      };
-  
-      igcrest.search(staleTables, function (err, resSearch) {
-  
-        const aTablesToAnalyze = [];
-  
-        // Build up a list of any tables with analysis results, so we can compare against project tables  
-        const tablesWithAnalysisResults = {};
-        for (let i = 0; i < resSearch.items.length; i++) {
-          const item = resSearch.items[i];
-          //const sTblAnalysisName = item._name;
-          //const sHostName = item["database_table_or_view.database_schema.database.host.name"];
-          const sDbName = item["database_table_or_view.database_schema.database.name"];
-          const sSchemaName = item["database_table_or_view.database_schema.name"];
-          const sTblName = item["database_table_or_view.name"];
-          const dModified = new Date(item.modified_on);
-          const qualifiedName = sDbName + "." + sSchemaName + "." + sTblName;
-          if (tablesWithAnalysisResults.hasOwnProperty(qualifiedName)) {
-            // Find the most recent analysis result, in case there are multiple
-            const lastTime = tablesWithAnalysisResults[qualifiedName];
-            if (lastTime < dModified) {
-              tablesWithAnalysisResults[qualifiedName] = dModified;
-            }
-          } else {
-            tablesWithAnalysisResults[qualifiedName] = dModified;
-          }
-        }
-  
-        for (const key in projectTables) {
-          if (projectTables.hasOwnProperty(key)) {
-            // If there is no analysis result, it has never been analyzed -- add it
-            if (!tablesWithAnalysisResults.hasOwnProperty(key)) {
-              aTablesToAnalyze.push(key);
-            } else {
-              // Otherwise, check the date of the last analysis
-              const lastAnalysis = tablesWithAnalysisResults[key];
-              if (lastAnalysis <= timeToConsiderStale) {
-                aTablesToAnalyze.push(key);
-              }
-            }
-          }
-        }
-  
-  // TODO: uncomment line below once files are working
-        callback(err, aTablesToAnalyze);
-  
-      });
-  
-  // TODO: handle files
-  // The tricky bit is that 'data_file' is just referenced as a 'main_object' -- so the last two properties below are not directly referenceable...
-  // ... probably have to run a follow-up search on all 'data_file' objects where the 'data_file_records' contains a particular RID (?)
-  //      "properties": [ "name", "modified_on", "data_file_record.name", "data_file_record.data_file.path", "data_file_record.data_file.host.name" ],
-  
-      const staleFiles = {
-        "pageSize": "10000",
-        "properties": [ "name", "modified_on", "data_file_record.name" ],
-        "types": [ "file_record_analysis" ]
-      };
-  
-      console.log("Searching files: " + JSON.stringify(staleFiles));
-      igcrest.search(staleFiles, function (err, resSearch) {
-    
-        const aFilesToAnalyze = [];
-  
-        const filesWithAnalysisResults = {};
-        for (let i = 0; i < resSearch.items.length; i++) {
-          const item = resSearch.items[i];
-          //const sFileAnalysisName = item._name;
-          const sHostName = item["data_file_record.data_file.host.name"];
-          const sFolderPath = item["data_file_record.data_file.path"];
-          const sRecordName = item["data_file_record.name"];
-          const dModified = new Date(item.modified_on);
-          const qualifiedName = sHostName + ":" + sFolderPath + ":" + sRecordName;
-          if (filesWithAnalysisResults.hasOwnProperty(qualifiedName)) {
-            const lastTime = filesWithAnalysisResults[qualifiedName];
-            if (lastTime < dModified) {
-              filesWithAnalysisResults[qualifiedName] = dModified;
-            }
-          } else {
-            console.log("Found analysis result for: " + qualifiedName);
-            filesWithAnalysisResults[qualifiedName] = dModified;
-          }
-        }
-  
-        for (const key in projectFiles) {
-          if (projectFiles.hasOwnProperty(key)) {
-            // If there is no analysis result, it has never been analyzed -- add it
-            if (!filesWithAnalysisResults.hasOwnProperty(key)) {
-              console.log("Adding file to analyze: " + key);
-              aFilesToAnalyze.push(key);
-            } else {
-              // Otherwise, check the date of the last analysis
-              const lastAnalysis = filesWithAnalysisResults(key);
-              if (lastAnalysis <= timeToConsiderStale) {
-                console.log("Stale analysis: " + key);
-                aFilesToAnalyze.push(key);
-              } else {
-                console.log("Ignoring -- not stale: " + key);
-              }
-            }
-          }
-        }
-  
-        callback(err, aFilesToAnalyze);
-  
-      });
-  
-  
+
+      return callback(err, aToAnalyze);
+
     });
-  
+
   };
-  
-  /**
-   * Get the status of a running task
-   *
-   * @param {string} executionID - the unique identification number of the running task
-   * @param {statusCallback} callback - callback that handles the response
-   */
-  const getTaskStatus = function(executionID, callback) {
-    makeRequest('GET', "/ibm/iis/ia/api/analysisStatus?scheduleID=" + executionID, null, null, function(res, resStatus) {
-      let err = null;
-      if (res.statusCode !== 200) {
-        err = "Unsuccessful request " + res.statusCode;
-        console.error(err);
-        console.error('headers: ', res.headers);
-        throw new Error(err);
-      }
-      const stat = {};
-      const resDoc = new xmldom.DOMParser().parseFromString(resStatus);
-      const nlExec = xpath.select("//*[local-name(.)='TaskExecution']", resDoc);
-      if (nlExec.length > 1) {
-        err = "More than one result found";
-      }
-      for (let i = 0; i < nlExec.length; i++) {
-        stat.executionId = nlExec[i].getAttribute("executionId");
-        stat.executionTime = nlExec[i].getAttribute("executionTime");
-        stat.progress = nlExec[i].getAttribute("progress");
-        stat.status = nlExec[i].getAttribute("status");
-      }
-      callback(err, stat);
-      return stat;
-    });
-  };
-  
-  /**
-   * Retrieves any execution IDs from the provided response
-   *
-   * @param {string} resXML
-   * @returns {string[]} an array of execution IDs
-   */
-  const getExecutionIDsFromResponse = function(resXML) {
-  
-    const executionIDs = [];
-    const resDoc = new xmldom.DOMParser().parseFromString(resXML);
-    const nlTask = xpath.select("//*[local-name(.)='ScheduledTask']", resDoc);
-    for (let i = 0; i < nlTask.length; i++) {
-      const executionID = nlTask[i].getAttribute("scheduleId");
-      executionIDs.push(executionID);
-    }
-    return executionIDs;
-  
-  };
-  
+
   /**
    * Issues a request to reindex Solr for any resutls to appear appropriately in the IA Thin Client
    *
@@ -1598,13 +1380,9 @@ const RestIA = (function() {
     createOrUpdateAnalysisProject: createOrUpdateAnalysisProject,
     getProjectList: getProjectList,
     getProjectDataSourceList: getProjectDataSourceList,
-    runColumnAnalysis: runColumnAnalysis,
-    runColumnAnalysisForSources: runColumnAnalysisForSources,
-    publishResults: publishResults,
-    publishResultsForSources: publishResultsForSources,
+    runColumnAnalysisForDataSources: runColumnAnalysisForDataSources,
+    publishResultsForDataSources: publishResultsForDataSources,
     getStaleAnalysisResults: getStaleAnalysisResults,
-    getTaskStatus: getTaskStatus,
-    getExecutionIDsFromResponse: getExecutionIDsFromResponse,
     reindexThinClient: reindexThinClient,
     getRuleExecutionFailedRecordsFromLastRun: getRuleExecutionFailedRecordsFromLastRun,
     getRuleExecutionResults: getRuleExecutionResults
