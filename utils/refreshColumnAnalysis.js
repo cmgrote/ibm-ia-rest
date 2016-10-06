@@ -26,8 +26,8 @@
  * @requires ibm-iis-kafka
  * @requires yargs
  * @example
- * // refreshes column analysis for all columns and file fields with results older than 48 hours, within the "Automated Profiling" project (by default)
- * ./refreshColumnAnalysis.js -t 48 -d hostname:9445 -z hostname:52181 -u isadmin -p isadmin
+ * // refreshes column analysis for all columns and file fields with results older than 24 hours, within the "Automated Profiling" project (by default)
+ * ./refreshColumnAnalysis.js -t 1440 -d hostname:9445 -z hostname:52181 -u isadmin -p isadmin
  */
 
 const iarest = require('ibm-ia-rest');
@@ -37,7 +37,7 @@ const iiskafka = require('ibm-iis-kafka');
 // Command-line setup
 const yargs = require('yargs');
 const argv = yargs
-    .usage('Usage: $0 -n <name> -t <timeInHours> -d <host>:<port> -z <host>:<port> -u <user> -p <password>')
+    .usage('Usage: $0 -n <name> -t <timeInMinutes> -d <host>:<port> -z <host>:<port> -u <user> -p <password>')
     .option('n', {
       alias: 'name',
       describe: 'Name of the Information Analyzer project',
@@ -46,7 +46,7 @@ const argv = yargs
     })
     .option('t', {
       alias: 'time',
-      describe: 'Re-run analysis on any assets without results published in the last T hours',
+      describe: 'Re-run analysis on any assets without results published in the last T minutes',
       requiresArg: true, type: 'number'
     })
     .env('DS')
@@ -87,7 +87,10 @@ const lastRefreshTime = argv.time;
 const now = new Date();
 let staleBefore = new Date();
 if (lastRefreshTime !== undefined && lastRefreshTime !== "") {
-  staleBefore = staleBefore.setHours(now.getHours() - lastRefreshTime);
+  const hours = (lastRefreshTime / 60);
+  const minutes = (lastRefreshTime % 60);
+  staleBefore.setHours(now.getHours() - hours, now.getMinutes() - minutes);
+  console.log("Refreshing any analysis last completed before: " + staleBefore);
 }
 
 const infosphereEventEmitter = new iiskafka.InfosphereEventEmitter(argv.zookeeper, 'automated-profiling-handler', false);
@@ -96,7 +99,6 @@ let tamsToSources = {};
 let iTotalTAMs = 0;
 const tamsProcessed = [];
 
-console.log("Determining stale analyses...");
 iarest.getStaleAnalysisResults(projectName, staleBefore, function(errStale, aStaleSources) {
   handleError("getting stale analysis results", errStale);
 
@@ -113,7 +115,7 @@ iarest.getStaleAnalysisResults(projectName, staleBefore, function(errStale, aSta
 
 });
 
-// TODO: could also investigate getting further progress information via these events (all of which have tamRid)
+// TODO: we could also look into outputting additional progress information via these events (all of which have tamRid)
 //      IA_DATAQUALITY_ANALYSIS_SUBMITTED
 //      IA_COLUMN_ANALYSIS_STARTED_EVENT
 //      IA_PROFILE_BATCH_COMPLETED_EVENT
