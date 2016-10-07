@@ -28,7 +28,7 @@
  * ./importAllRuleAssets.js -d 'FWK' -e ENGINE.HOST.NAME -f /tmp/extract.tgz -u isadmin -p isadmin -m /tmp/mapping.xml
  */
 
-require('shelljs/global');
+const shell = require('shelljs');
 const path = require('path');
 
 // Command-line setup
@@ -78,13 +78,13 @@ const tmpPath = parsedPath.root + parsedPath.dir + path.sep + parsedPath.name;
 const baseFilename = parsedPath.name;
 
 let bCreated = false;
-if (!test('-d', tmpPath)) {
-  mkdir(tmpPath);
+if (!shell.test('-d', tmpPath)) {
+  shell.mkdir(tmpPath);
   bCreated = true;
 }
 
 const cmdTGZ = "tar zxv -C '" + tmpPath + "' -f '" + argv.filepath + "'";
-const resultTGZ = exec(cmdTGZ, {silent: true, "shell": "/bin/bash"});
+const resultTGZ = shell.exec(cmdTGZ, {silent: true, "shell": "/bin/bash"});
 if (resultTGZ.code !== 0) {
   console.error("ERROR extracting single bundle TGZ:");
   console.error(resultTGZ.stderr);
@@ -100,7 +100,7 @@ let cmdImportIA = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh impo
 if (argv.mapping) {
   cmdImportIA = cmdImportIA + " -mapping '" + argv.mapping + "'";
 }
-const resultImportIA = exec(cmdImportIA, {silent: true, "shell": "/bin/bash"});
+const resultImportIA = shell.exec(cmdImportIA, {silent: true, "shell": "/bin/bash"});
 if (resultImportIA.code !== 0) {
   console.error("ERROR importing IA content:");
   console.error(resultImportIA.stderr);
@@ -114,7 +114,7 @@ const cmdImportDS = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh im
     " -p " + argv.deploymentUserPassword +
     " -ar '" + tmpPath + path.sep + baseFilename + ".isx'" +
     " -replace -ds '" + argv.engine + "/" + argv.dsname + "'";
-const resultImportDS = exec(cmdImportDS, {silent: true, "shell": "/bin/bash"});
+const resultImportDS = shell.exec(cmdImportDS, {silent: true, "shell": "/bin/bash"});
 if (resultImportDS.code !== 0) {
   console.error("ERROR importing DS content:");
   console.error(resultImportDS.stderr);
@@ -131,7 +131,7 @@ let cmdImportBG = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh glos
 if (argv.mapping) {
   cmdImportBG = cmdImportBG + " -map '" + argv.mapping + "'";
 }
-const resultImportBG = exec(cmdImportBG, {silent: true, "shell": "/bin/bash"});
+const resultImportBG = shell.exec(cmdImportBG, {silent: true, "shell": "/bin/bash"});
 if (resultImportBG.code !== 0) {
   console.error("ERROR importing IGC content:");
   console.error(resultImportBG.stderr);
@@ -139,8 +139,8 @@ if (resultImportBG.code !== 0) {
 }
 
 if (bCreated) {
-  rm('-rf', tmpPath);
+  shell.rm('-rf', tmpPath);
 } else {
-  rm(tmpPath + path.sep + baseFilename + ".isx");
-  rm(tmpPath + path.sep + baseFilename + ".xmi");
+  shell.rm(tmpPath + path.sep + baseFilename + ".isx");
+  shell.rm(tmpPath + path.sep + baseFilename + ".xmi");
 }

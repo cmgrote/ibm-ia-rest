@@ -28,7 +28,7 @@
  * ./exportAllRuleAssets.js -i 'DQ Experiments' -d 'FWK' -e ENGINE.HOST.NAME -f /tmp/extract -u isadmin -p isadmin
  */
 
-require('shelljs/global');
+const shell = require('shelljs');
 const path = require('path');
 
 // Command-line setup
@@ -80,7 +80,7 @@ const cmdExportIA = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh ex
     " -ar '" + argv.filepath + ".isx'" +
     " -up -ia '-projects \"\\\\" + argv.ianame + "\\\\\"" +
     " -includeDataClasses -includeCommonMetadata -includeProjectRoles -includeReports'";
-const resultExportIA = exec(cmdExportIA, {silent: true, "shell": "/bin/bash"});
+const resultExportIA = shell.exec(cmdExportIA, {silent: true, "shell": "/bin/bash"});
 if (resultExportIA.code !== 0) {
   console.error("ERROR exporting IA content:");
   console.error(resultExportIA.stderr);
@@ -94,7 +94,7 @@ const cmdExportBG = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh gl
     " -p " + argv.deploymentUserPassword +
     " -f '" + argv.filepath + ".xmi'" +
     " -format XMI -allpoliciesrules -includeassignedassets -includestewardship -includelabeledassets -includeTermHistory";
-const resultExportBG = exec(cmdExportBG, {silent: true, "shell": "/bin/bash"});
+const resultExportBG = shell.exec(cmdExportBG, {silent: true, "shell": "/bin/bash"});
 if (resultExportBG.code !== 0) {
   console.error("ERROR exporting IGC content:");
   console.error(resultExportBG.stderr);
@@ -108,7 +108,7 @@ const cmdExportDS = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh ex
     " -p " + argv.deploymentUserPassword +
     " -ar '" + argv.filepath + ".isx'" +
     " -up -ds '" + argv.engine + "/" + argv.dsname + "/*/*.* -incdep'";
-const resultExportDS = exec(cmdExportDS, {silent: true, "shell": "/bin/bash"});
+const resultExportDS = shell.exec(cmdExportDS, {silent: true, "shell": "/bin/bash"});
 if (resultExportDS.code !== 0) {
   console.error("ERROR exporting DS content:");
   console.error(resultExportDS.stderr);
@@ -116,12 +116,12 @@ if (resultExportDS.code !== 0) {
 }
 
 const cmdTGZ = "tar zcv -C " + path.dirname(argv.filepath) + " -f '" + argv.filepath + ".tgz' '" + path.posix.basename(argv.filepath) + ".isx' '" + path.posix.basename(argv.filepath) + ".xmi'";
-const resultTGZ = exec(cmdTGZ, {silent: true, "shell": "/bin/bash"});
+const resultTGZ = shell.exec(cmdTGZ, {silent: true, "shell": "/bin/bash"});
 if (resultTGZ.code !== 0) {
   console.error("ERROR creating single bundle TGZ:");
   console.error(resultTGZ.stderr);
   process.exit(resultTGZ.code);
 }
 
-rm(argv.filepath + ".isx");
-rm(argv.filepath + ".xmi");
+shell.rm(argv.filepath + ".isx");
+shell.rm(argv.filepath + ".xmi");
