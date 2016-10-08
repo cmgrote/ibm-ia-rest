@@ -21,20 +21,22 @@
 /**
  * @file Extract all rule-related assets from an environment
  * @license Apache-2.0
+ * @requires ibm-iis-commons
  * @requires shelljs
  * @requires yargs
  * @example
  * // exports all rule-related assets from the "DQ Experiments" Information Analyzer project and "FWK" DataStage project into /tmp/extract.tgz
- * ./exportAllRuleAssets.js -i 'DQ Experiments' -d 'FWK' -e ENGINE.HOST.NAME -f /tmp/extract -u isadmin -p isadmin
+ * ./exportAllRuleAssets.js -i 'DQ Experiments' -d 'FWK' -f /tmp/extract
  */
 
+const commons = require('ibm-iis-commons');
 const shell = require('shelljs');
 const path = require('path');
 
 // Command-line setup
 const yargs = require('yargs');
 const argv = yargs
-    .usage('Usage: $0 -i <iaProjectName> -d <dsProjectName> -e <engineTierFQDN> -f <path> -u <user> -p <password>')
+    .usage('Usage: $0 -i <iaProjectName> -d <dsProjectName> -f <path> -a <authorisationFile>')
     .option('i', {
       alias: 'ianame',
       describe: 'Name of the Information Analyzer project',
@@ -45,38 +47,29 @@ const argv = yargs
       describe: 'Name of the DataStage project',
       demand: true, requiresArg: true, type: 'string'
     })
-    .option('e', {
-      alias: 'engine',
-      describe: 'Fully-qualified hostname of engine tier',
-      demand: true, requiresArg: true, type: 'string'
-    })
     .option('f', {
       alias: 'filepath',
       describe: 'Path to the file in which to save assets',
       demand: true, requiresArg: true, type: 'string'
     })
-    .env('DS')
-    .option('u', {
-      alias: 'deployment-user',
-      describe: 'User for invoking IA REST',
-      demand: true, requiresArg: true, type: 'string',
-      default: "isadmin"
-    })
-    .option('p', {
-      alias: 'deployment-user-password',
-      describe: 'Password for invoking IA REST',
-      demand: true, requiresArg: true, type: 'string',
-      default: "isadmin"
+    .option('a', {
+      alias: 'authfile',
+      describe: 'Authorisation file containing environment context',
+      requiresArg: true, type: 'string'
     })
     .help('h')
     .alias('h', 'help')
     .wrap(yargs.terminalWidth())
     .argv;
 
+const envCtx = new commons.EnvironmentContext();
+if (argv.authfile !== undefined && argv.authfile !== "") {
+  envCtx.authFile = argv.authfile;
+}
+
 console.log("Extracting all Information Analyzer assets from '" + argv.ianame + "'...");
 const cmdExportIA = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh export" +
-    " -u " + argv.deploymentUser +
-    " -p " + argv.deploymentUserPassword +
+    " -af " + envCtx.authFile +
     " -ar '" + argv.filepath + ".isx'" +
     " -up -ia '-projects \"\\\\" + argv.ianame + "\\\\\"" +
     " -includeDataClasses -includeCommonMetadata -includeProjectRoles -includeReports'";
@@ -90,8 +83,7 @@ if (resultExportIA.code !== 0) {
 // TODO: limit only to policies, rules and related assets (not all terms, categories, etc)
 console.log("Extracting all Information Governance Catalog assets...");
 const cmdExportBG = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh glossary export" +
-    " -u " + argv.deploymentUser +
-    " -p " + argv.deploymentUserPassword +
+    " -af " + envCtx.authFile +
     " -f '" + argv.filepath + ".xmi'" +
     " -format XMI -allpoliciesrules -includeassignedassets -includestewardship -includelabeledassets -includeTermHistory";
 const resultExportBG = shell.exec(cmdExportBG, {silent: true, "shell": "/bin/bash"});
@@ -104,10 +96,9 @@ if (resultExportBG.code !== 0) {
 // TODO: limit only to DataStage jobs that include Data Rules Stages (?)
 console.log("Extracting all DataStage assets from '" + argv.dsname + "'...");
 const cmdExportDS = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh export" +
-    " -u " + argv.deploymentUser +
-    " -p " + argv.deploymentUserPassword +
+    " -af " + envCtx.authFile +
     " -ar '" + argv.filepath + ".isx'" +
-    " -up -ds '" + argv.engine + "/" + argv.dsname + "/*/*.* -incdep'";
+    " -up -ds '" + envCtx.engine + "/" + argv.dsname + "/*/*.* -incdep'";
 const resultExportDS = shell.exec(cmdExportDS, {silent: true, "shell": "/bin/bash"});
 if (resultExportDS.code !== 0) {
   console.error("ERROR exporting DS content:");

@@ -21,28 +21,25 @@
 /**
  * @file Loads all rule-related assets into an environment from the specified file
  * @license Apache-2.0
+ * @requires ibm-iis-commons
  * @requires shelljs
  * @requires yargs
  * @example
- * // imports all rule-related assets from the file /tmp/extract.tgz into the environment and DataStage project FWK, applying any mapings in /tmp/mapping.xml
- * ./importAllRuleAssets.js -d 'FWK' -e ENGINE.HOST.NAME -f /tmp/extract.tgz -u isadmin -p isadmin -m /tmp/mapping.xml
+ * // imports all rule-related assets from the file /tmp/extract.tgz into DataStage project FWK, applying any mapings in /tmp/mapping.xml
+ * ./importAllRuleAssets.js -d 'FWK' -f /tmp/extract.tgz -m /tmp/mapping.xml
  */
 
+const commons = require('ibm-iis-commons');
 const shell = require('shelljs');
 const path = require('path');
 
 // Command-line setup
 const yargs = require('yargs');
 const argv = yargs
-    .usage('Usage: $0 -d <dsProjectName> -e <engineTierFQDN> -f <path> -u <user> -p <password> -m <mappingFile>')
+    .usage('Usage: $0 -d <dsProjectName> -f <path> -m <mappingFile> -a <authorisationFile>')
     .option('d', {
       alias: 'dsname',
       describe: 'Name of the DataStage project',
-      demand: true, requiresArg: true, type: 'string'
-    })
-    .option('e', {
-      alias: 'engine',
-      describe: 'Fully-qualified hostname of engine tier',
       demand: true, requiresArg: true, type: 'string'
     })
     .option('f', {
@@ -55,23 +52,20 @@ const argv = yargs
       describe: 'Path to the file in which mappings are defined',
       demand: false, requiresArg: true, type: 'string'
     })
-    .env('DS')
-    .option('u', {
-      alias: 'deployment-user',
-      describe: 'User for invoking IA REST',
-      demand: true, requiresArg: true, type: 'string',
-      default: "isadmin"
-    })
-    .option('p', {
-      alias: 'deployment-user-password',
-      describe: 'Password for invoking IA REST',
-      demand: true, requiresArg: true, type: 'string',
-      default: "isadmin"
+    .option('a', {
+      alias: 'authfile',
+      describe: 'Authorisation file containing environment context',
+      requiresArg: true, type: 'string'
     })
     .help('h')
     .alias('h', 'help')
     .wrap(yargs.terminalWidth())
     .argv;
+
+const envCtx = new commons.EnvironmentContext();
+if (argv.authfile !== undefined && argv.authfile !== "") {
+  envCtx.authFile = argv.authfile;
+}
 
 const parsedPath = path.parse(argv.filepath);
 const tmpPath = parsedPath.root + parsedPath.dir + path.sep + parsedPath.name;
@@ -93,8 +87,7 @@ if (resultTGZ.code !== 0) {
 
 console.log("Importing all Information Analyzer assets from '" + tmpPath + path.sep + baseFilename + ".isx'...");
 let cmdImportIA = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh import" +
-    " -u " + argv.deploymentUser +
-    " -p " + argv.deploymentUserPassword +
+    " -af " + envCtx.authFile +
     " -ar '" + tmpPath + path.sep + baseFilename + ".isx'" +
     " -replace -cm '' -ia '-onNameConflict replace' -report";
 if (argv.mapping) {
@@ -110,10 +103,9 @@ if (resultImportIA.code !== 0) {
 // TODO: limit only to DataStage jobs that include Data Rules Stages (?)
 console.log("Importing all DataStage assets from '" + tmpPath + path.sep + baseFilename + ".isx'...");
 const cmdImportDS = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh import" +
-    " -u " + argv.deploymentUser +
-    " -p " + argv.deploymentUserPassword +
+    " -af " + envCtx.authFile +
     " -ar '" + tmpPath + path.sep + baseFilename + ".isx'" +
-    " -replace -ds '" + argv.engine + "/" + argv.dsname + "'";
+    " -replace -ds '" + envCtx.engine + "/" + argv.dsname + "'";
 const resultImportDS = shell.exec(cmdImportDS, {silent: true, "shell": "/bin/bash"});
 if (resultImportDS.code !== 0) {
   console.error("ERROR importing DS content:");
@@ -124,8 +116,7 @@ if (resultImportDS.code !== 0) {
 // TODO: limit only to policies, rules and related assets (not all terms, categories, etc)
 console.log("Importing all Information Governance Catalog assets...");
 let cmdImportBG = "/opt/IBM/InformationServer/Clients/istools/cli/istool.sh glossary import" +
-    " -u " + argv.deploymentUser +
-    " -p " + argv.deploymentUserPassword +
+    " -af " + envCtx.authFile +
     " -f '" + tmpPath + path.sep + baseFilename + ".xmi'" +
     " -format XMI -mergemethod mergeoverwrite";
 if (argv.mapping) {
