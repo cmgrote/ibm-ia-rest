@@ -631,7 +631,7 @@ const RestIA = (function() {
             }]
           }
         };
-  
+  console.log("Request: " + JSON.stringify(addFilesJSON));
         //exports.makeRequest('POST', endpoint, addFilesJSON, 'application/json', function(res, resUpdate) {
         makeRequest('POST', endpoint, addFilesJSON, 'application/json', function(res) {
           let err = null;
@@ -846,7 +846,7 @@ const RestIA = (function() {
         const input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
         //console.log("Input (dbs): " + input);
         _createOrUpdateProjectRequest(input, bCreate, function() {
-          _getLocalFileConnectorForHost(sHostName, function(errDCN, dcnRID) {
+          _getLocalFileConnectorForHost(sHostName, function(errDCN, dcnRID) { // TODO: files could be on other hosts as well (i.e. Hadoop)
             _getProjectRID(description, function(errPrj, projectRID) {
               _addFilesToProject(dcnRID, projectRID, aFileList, callback);
             });
@@ -905,7 +905,7 @@ const RestIA = (function() {
           const input = new xmldom.XMLSerializer().serializeToString(proj.getProjectDoc());
           //console.log("Input (files): " + input);
           _createOrUpdateProjectRequest(input, bCreate, function() {
-            _getLocalFileConnectorForHost(sHostName, function(errDCN, dcnRID) {
+            _getLocalFileConnectorForHost(sHostName, function(errDCN, dcnRID) { // TODO: files could be on other hosts as well (i.e. Hadoop)
               _getProjectRID(description, function(errPrj, projectRID) {
                 _addFilesToProject(dcnRID, projectRID, aFileList, callback);
               });
