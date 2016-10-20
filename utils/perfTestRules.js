@@ -94,38 +94,14 @@ const ruleExecutions = {
   "RISKMART::49. If floating indicator is V then reference date should not be empty": {},
   "RISKMART::56.Limit_Outstanding": {}
 };
+const rulesStarted = {};
 const rulesProcessed = [];
 const ruleIds = Object.keys(ruleExecutions);
 const iTotalRules = ruleIds.length;
 
 let currentRule = 0;
 runNextRule(currentRule++);
-/*
-for (let i = 0; i < ruleIds.length; i++) {
-  const ruleId = ruleIds[i];
-  const projName = ruleId.substring(0, ruleId.indexOf("::"));
-  const ruleName = ruleId.substring(ruleId.indexOf("::") + 2);
-  ruleExecutions[ruleId].project = projName;
-  ruleExecutions[ruleId].rule = ruleName;
-  console.log("Executing Information Analyzer rule '" + projName +  "::" + ruleName + "'...");
-  let cmdExecRule = envCtx.asbhome + "/bin/IAJob.sh" +
-      " -user " + envCtx.username +
-      " -password '" + envCtx.password + "'" +
-      " -isHost " + envCtx.domainHost +
-      " -port " + envCtx.domainPort +
-      " -run '" + projName + "' '" + ruleName + "'";
-  console.log("  --> " + cmdExecRule);
-  ruleExecutions[ruleId].mRuleCmdStarted = moment();
-  const result = shell.exec(cmdExecRule, {silent: true, "shell": "/bin/bash"});
-  ruleExecutions[ruleId].mRuleCmdReturned = moment();
-  ruleExecutions[ruleId].execCode = result.code;
-  if (result.code !== 0) {
-    console.error("ERROR executing IA rule:");
-    console.error(result.stderr);
-  }
 
-}
-*/
 function runNextRule(index) {
 
   const ruleId = ruleIds[index];
@@ -143,6 +119,7 @@ function runNextRule(index) {
   console.log("  --> " + cmdExecRule);
   ruleExecutions[ruleId].mRuleCmdStarted = moment();
   const result = shell.exec(cmdExecRule, {silent: true, "shell": "/bin/bash", async: true});
+  rulesStarted[ruleId] = true;
   result.on('close', (code) => {
     ruleExecutions[ruleId].mRuleCmdReturned = moment();
     ruleExecutions[ruleId].exitCode = code;
@@ -197,7 +174,7 @@ function closeExecution(infosphereEvent, eventCtx, commitCallback) {
   const ruleName = infosphereEvent.exceptionSummaryName;
   const projName = infosphereEvent.projectName;
   const ruleId = getRuleIdentityString(projName, ruleName);
-  if (ruleExecutions.hasOwnProperty(ruleId)) {
+  if (rulesStarted.hasOwnProperty(ruleId)) {
     const execObj = ruleExecutions[ruleId];
     execObj.mFinalEventRaised = moment();
     iarest.getRuleExecutionResults(projName, ruleName, true, function(err, aStats) {
@@ -205,18 +182,20 @@ function closeExecution(infosphereEvent, eventCtx, commitCallback) {
       handleError("retrieving rule execution results", err);
       const stat = aStats[0];
       if (typeof stat === 'undefined' || stat === null) {
-        console.error("ERROR: No stat object for " + ruleId + "!");
+        console.log("ERROR: No stat object for " + ruleId + "!  Waiting 5 seconds and retrying...");
+        setTimeout(closeExecution, 5000, infosphereEvent, eventCtx, commitCallback);
       } else {
         execObj.mRecordedStart = moment(stat.dStart);
         execObj.mRecordedEnd = moment(stat.dEnd);
         execObj.numFailed = stat.numFailed;
         execObj.numTotal = stat.numTotal;
         checkAndOutputResults(execObj);
+        commitCallback(eventCtx);
       }
-      commitCallback(eventCtx);
     });
   } else {
-    console.log("Found execution that we were not tracking -- skipping it: " + ruleId);
+    console.log("Found execution that we were not tracking -- cleaning it: " + ruleId);
+    cleanUp({"project": projName, "rule": ruleName});
     commitCallback(eventCtx);
   }
 }
