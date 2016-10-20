@@ -66,7 +66,9 @@ const ruleDetails = fs.readFileSync(argv.file, 'utf8').split(",");
 const projName = ruleDetails[0];
 const ruleName = ruleDetails[1];
 const dRuleExecStart = moment(ruleDetails[2]);
-const dRuleExecEnd = moment(ruleDetails[3]);
+const dCmdExecStop = moment(ruleDetails[3]);
+const dEventRaised = moment(ruleDetails[4]);
+const dRuleExecEnd = dCmdExecStop.isAfter(dEventRaised) ? dCmdExecStop : dEventRaised;
 
 const aMetricNames = Object.keys(metrics);
 for (let i = 0; i < aMetricNames.length; i++) {
@@ -77,7 +79,7 @@ for (let i = 0; i < aMetricNames.length; i++) {
 }
 
 function getBaseFilename() {
-  return "/data/ruleTest__" + projName.replace(/ /g, "_") + "_" + ruleName.replace(/ /g, "_") + "_" + dRuleExecStart.toISOString();
+  return "/data/ruleTest__" + projName.replace(/ /g, "_") + "_" + ruleName.replace(/ /g, "_");
 }
 
 function createSysstatGraph(metricName, metricCode) {
@@ -85,8 +87,8 @@ function createSysstatGraph(metricName, metricCode) {
   const filename = getBaseFilename() + "__" + argv.host + "__sar_" + metricName + ".svg";
   console.log(" ... writing: " + filename);
   const cmdSadf = "/usr/local/bin/sadf -g" +
-      " -s " + dRuleExecStart.format("HH:mm") + ":00" +
-      " -e " + dRuleExecEnd.format("HH:mm") + ":59" +
+      " -s " + dRuleExecStart.format("HH:mm:ss") +
+      " -e " + dRuleExecEnd.format("HH:mm:ss") +
       " -- " + metricCode + " > " + filename;
   console.log("  --> " + cmdSadf);
   const result = shell.exec(cmdSadf, {silent: true, "shell": "/bin/bash"});
