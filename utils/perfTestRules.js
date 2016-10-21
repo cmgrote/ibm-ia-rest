@@ -104,31 +104,33 @@ runNextRule(currentRule++);
 
 function runNextRule(index) {
 
-  const ruleId = ruleIds[index];
-  const projName = ruleId.substring(0, ruleId.indexOf("::"));
-  const ruleName = ruleId.substring(ruleId.indexOf("::") + 2);
-  ruleExecutions[ruleId].project = projName;
-  ruleExecutions[ruleId].rule = ruleName;
-  console.log("Executing Information Analyzer rule '" + projName +  "::" + ruleName + "'...");
-  let cmdExecRule = envCtx.asbhome + "/bin/IAJob.sh" +
-      " -user " + envCtx.username +
-      " -password '" + envCtx.password + "'" +
-      " -isHost " + envCtx.domainHost +
-      " -port " + envCtx.domainPort +
-      " -run '" + projName + "' '" + ruleName + "'";
-  console.log("  --> " + cmdExecRule);
-  ruleExecutions[ruleId].mRuleCmdStarted = moment();
-  const result = shell.exec(cmdExecRule, {silent: true, "shell": "/bin/bash", async: true});
-  rulesStarted[ruleId] = true;
-  result.on('close', (code) => {
-    ruleExecutions[ruleId].mRuleCmdReturned = moment();
-    ruleExecutions[ruleId].exitCode = code;
-    if (code !== 0) {
-      console.error("ERROR executing IA rule: " + ruleId);
-    }
-    checkAndOutputResults(ruleExecutions[ruleId]);
-    runNextRule(currentRule++);
-  });
+  if (index < iTotalRules) {
+    const ruleId = ruleIds[index];
+    const projName = ruleId.substring(0, ruleId.indexOf("::"));
+    const ruleName = ruleId.substring(ruleId.indexOf("::") + 2);
+    ruleExecutions[ruleId].project = projName;
+    ruleExecutions[ruleId].rule = ruleName;
+    console.log("Executing Information Analyzer rule '" + projName +  "::" + ruleName + "'...");
+    let cmdExecRule = envCtx.asbhome + "/bin/IAJob.sh" +
+        " -user " + envCtx.username +
+        " -password '" + envCtx.password + "'" +
+        " -isHost " + envCtx.domainHost +
+        " -port " + envCtx.domainPort +
+        " -run '" + projName + "' '" + ruleName + "'";
+    console.log("  --> " + cmdExecRule);
+    ruleExecutions[ruleId].mRuleCmdStarted = moment();
+    const result = shell.exec(cmdExecRule, {silent: true, "shell": "/bin/bash", async: true});
+    rulesStarted[ruleId] = true;
+    result.on('close', (code) => {
+      ruleExecutions[ruleId].mRuleCmdReturned = moment();
+      ruleExecutions[ruleId].exitCode = code;
+      if (code !== 0) {
+        console.error("ERROR executing IA rule: " + ruleId);
+      }
+      checkAndOutputResults(ruleExecutions[ruleId]);
+      runNextRule(currentRule++);
+    });
+  }
 
 }
 
