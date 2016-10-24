@@ -35,6 +35,7 @@ const iiskafka = require('ibm-iis-kafka');
 const shell = require('shelljs');
 const moment = require('moment');
 const fs = require('fs');
+const util = require('util');
 
 // Command-line setup
 const yargs = require('yargs');
@@ -99,8 +100,10 @@ const rulesProcessed = [];
 const ruleIds = Object.keys(ruleExecutions);
 const iTotalRules = ruleIds.length;
 
+let iRulesRunning = 0;
 let currentRule = 0;
-runNextRule(currentRule++);
+// Wait 10 seconds before kicking off the first rule to allow time to drain any processing in the queue
+setTimeout(runNextRule, 10000, currentRule++);
 
 function runNextRule(index) {
 
@@ -119,17 +122,37 @@ function runNextRule(index) {
         " -run '" + projName + "' '" + ruleName + "'";
     console.log("  --> " + cmdExecRule);
     ruleExecutions[ruleId].mRuleCmdStarted = moment();
-    const result = shell.exec(cmdExecRule, {silent: true, "shell": "/bin/bash", async: true});
-    rulesStarted[ruleId] = true;
-    result.on('close', (code) => {
+    /*const result =*/
+    shell.exec(cmdExecRule, {silent: true, "shell": "/bin/bash", maxBuffer: 1000*1024}, function(code, stdout, stderr) {
       ruleExecutions[ruleId].mRuleCmdReturned = moment();
       ruleExecutions[ruleId].exitCode = code;
+      if (code !== 0) {
+        console.log(stdout);
+        console.error("ERROR executing IA rule: " + ruleId);
+        console.error(stderr);
+      } else {
+        console.log(stdout);
+      }
+      checkAndOutputResults(ruleExecutions[ruleId]);
+      iRulesRunning--;
+    });
+    iRulesRunning++;
+    rulesStarted[ruleId] = true;
+/*    result.on('exit', (code, signal) => {
+      ruleExecutions[ruleId].mRuleCmdReturned = moment();
+      ruleExecutions[ruleId].exitCode = code;
+      if (signal !== null) {
+        console.error("Processing interrupted: " + signal);
+      }
       if (code !== 0) {
         console.error("ERROR executing IA rule: " + ruleId);
       }
       checkAndOutputResults(ruleExecutions[ruleId]);
-    });
-    runNextRule(currentRule++);
+      iRulesRunning--;
+    }); */
+    // Allow a 10-second gap between starting rules to avoid possible race conditions / deadlocks
+    setTimeout(runNextRule, 20000, currentRule++);
+    //runNextRule(currentRule++);
   }
 
 }
@@ -214,7 +237,7 @@ function cleanUp(execObj) {
       " -keepLastRuns 0";
   console.log("  --> " + cmdCleanData);
   const resultData = shell.exec(cmdCleanData, {silent: true, "shell": "/bin/bash"});
-  if (resultData.code !== 0) {
+  if (resultData === null || resultData.code !== 0) {
     console.error("ERROR cleaning up output table of IA rule:");
     console.error(resultData.stderr);
   }
@@ -229,7 +252,7 @@ function cleanUp(execObj) {
       " -keepLastRuns 0";
   console.log("  --> " + cmdCleanStats);
   const resultStats = shell.exec(cmdCleanStats, {silent: true, "shell": "/bin/bash"});
-  if (resultStats.code !== 0) {
+  if (resultStats === null || resultStats.code !== 0) {
     console.error("ERROR cleaning up output table of IA rule:");
     console.error(resultStats.stderr);
   }
