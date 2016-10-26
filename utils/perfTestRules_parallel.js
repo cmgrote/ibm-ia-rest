@@ -35,12 +35,16 @@ const iiskafka = require('ibm-iis-kafka');
 const shell = require('shelljs');
 const moment = require('moment');
 const fs = require('fs');
-const util = require('util');
 
 // Command-line setup
 const yargs = require('yargs');
 const argv = yargs
-    .usage('Usage: $0 -z <host>:<port> [-a <authorisationFile>]')
+    .usage('Usage: $0 -f <file> -z <host>:<port> [-a <authorisationFile>]')
+    .option('f', {
+      alias: 'file',
+      describe: 'Filename containing JSON of rules to execute',
+      demand: true, requiresArg: true, type: 'string'
+    })
     .option('z', {
       alias: 'zookeeper',
       describe: 'Host and port for Zookeeper connection to consume from Kafka',
@@ -81,20 +85,8 @@ function getRuleIdentityString(projectName, ruleName) {
   return projectName + "::" + ruleName;
 }
 
-const ruleExecutions = {
-  "RISKMART::12. Deal ID unique per position date": {},
-  "RISKMART::14.a Currencies in Reference table": {},
-  "RISKMART::14.b Currencies in Reference table": {},
-  "RISKMART::25. Notional_GT_0": {},
-  "RISKMART::28. Fix_Floating_Valid_Values": {},
-  "RISKMART::31. Deal_Date_Mandatory": {},
-  "RISKMART::33. Begin_Date_Mandatory": {},
-  "RISKMART::43. Maturity Date Older Start Date": {},
-  "RISKMART::43. Settlement Date older  Deal Maturity Date": {},
-  "RISKMART::48. Interest_Reset_Date_Check": {},
-  "RISKMART::49. If floating indicator is V then reference date should not be empty": {},
-  "RISKMART::56.Limit_Outstanding": {}
-};
+const ruleExecutions = JSON.parse(fs.readFileSync(argv.file, 'utf8'));
+
 const rulesStarted = {};
 const rulesProcessed = [];
 const ruleIds = Object.keys(ruleExecutions);
