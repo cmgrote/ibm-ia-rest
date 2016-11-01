@@ -121,7 +121,6 @@ function runNextRule(index) {
         console.error("ERROR executing IA rule: " + ruleId);
       }
       checkAndOutputResults(ruleExecutions[ruleId]);
-      runNextRule(currentRule++);
     });
   }
 
@@ -153,6 +152,7 @@ function checkAndOutputResults(execObj) {
     fs.writeFileSync(filename, data, 'utf8');
     cleanUp(execObj);
     recordCompletion(execObj.rule);
+    runNextRule(currentRule++);
   }
 }
 
