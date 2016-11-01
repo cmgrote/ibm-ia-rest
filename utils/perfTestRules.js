@@ -72,6 +72,7 @@ iarest.setConnection(restConnect);
 const infosphereEventEmitter = new iiskafka.InfosphereEventEmitter(argv.zookeeper, 'ia-perf-test', false);
 
 infosphereEventEmitter.on('NEW_EXCEPTIONS_EVENT', closeExecution);
+infosphereEventEmitter.on('IA_DATARULE_FAILED_EVENT', cancelExecution);
 infosphereEventEmitter.on('error', function(errMsg) {
   console.error("Received 'error' -- aborting process: " + errMsg);
   process.exit(1);
@@ -163,6 +164,13 @@ function recordCompletion(ruleId) {
   if (iTotalRules === rulesProcessed.length) {
     infosphereEventEmitter.emit('end');
   }
+}
+
+function cancelExecution(infosphereEvent, eventCtx, commitCallback) {
+  //const ruleRid = infosphereEvent.ruleRid;
+  console.error("ERROR: Execution of last rule failed -- moving on.");
+  commitCallback(eventCtx);
+  runNextRule(currentRule++);
 }
 
 function closeExecution(infosphereEvent, eventCtx, commitCallback) {
