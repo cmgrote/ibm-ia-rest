@@ -121,7 +121,6 @@ function runNextRule(index) {
       if (code !== 0) {
         console.error("ERROR executing IA rule: " + ruleId);
       }
-      checkAndOutputResults(ruleExecutions[ruleId]);
     });
   }
 
@@ -167,10 +166,19 @@ function recordCompletion(ruleId) {
 }
 
 function cancelExecution(infosphereEvent, eventCtx, commitCallback) {
-  //const ruleRid = infosphereEvent.ruleRid;
   console.error("ERROR: Execution of last rule failed -- moving on.");
-  commitCallback(eventCtx);
-  runNextRule(currentRule++);
+  const ruleId = ruleIds[currentRule];
+  if (rulesStarted.hasOwnProperty(ruleId)) {
+    const execObj = ruleExecutions[ruleId];
+    execObj.mFinalEventRaised = moment();
+    const filename = getBaseFilename(execObj.project, execObj.rule) + "__failed.csv";
+    const data = execObj.project + "," + execObj.rule + "," + execObj.mRuleCmdStarted.toISOString() + "," + execObj.mRuleCmdReturned.toISOString() + "," + execObj.mFinalEventRaised.toISOString() + "," + (execObj.mRuleCmdReturned - execObj.mRuleCmdStarted) + "," + (execObj.mFinalEventRaised - execObj.mRuleCmdStarted) + "," + execObj.mRecordedStart.toISOString() + "," + execObj.mRecordedEnd.toISOString() + "," + (execObj.mRecordedEnd - execObj.mRecordedStart) + ",-1,-1\n";
+    fs.writeFileSync(filename, data, 'utf8');
+    cleanUp(execObj);
+    recordCompletion(execObj.rule);
+    commitCallback(eventCtx);
+    runNextRule(currentRule++);
+  }
 }
 
 function closeExecution(infosphereEvent, eventCtx, commitCallback) {
