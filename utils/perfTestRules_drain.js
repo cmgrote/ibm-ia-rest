@@ -65,6 +65,7 @@ iarest.setConnection(restConnect);
 const infosphereEventEmitter = new iiskafka.InfosphereEventEmitter(argv.zookeeper, 'ia-perf-test', false);
 
 infosphereEventEmitter.on('NEW_EXCEPTIONS_EVENT', drainExecution);
+infosphereEventEmitter.on('IA_DATARULE_FAILED_EVENT', drainExecutionByCommit);
 infosphereEventEmitter.on('error', function(errMsg) {
   console.error("Received 'error' -- aborting process: " + errMsg);
   process.exit(1);
@@ -84,6 +85,10 @@ function drainExecution(infosphereEvent, eventCtx, commitCallback) {
   const ruleId = getRuleIdentityString(projName, ruleName);
   console.log("Found left-over execution -- cleaning it: " + ruleId);
   cleanUp({"project": projName, "rule": ruleName});
+  commitCallback(eventCtx);
+}
+
+function drainExecutionByCommit(InfosphereEvent, eventCtx, commitCallback) {
   commitCallback(eventCtx);
 }
 
