@@ -91,6 +91,7 @@ function getRuleIdentityString(projectName, ruleName) {
 const ruleExecutions = JSON.parse(fs.readFileSync(argv.file, 'utf8'));
 
 const nonObviousIdToRuleId = {};
+const failedRulesProcessed = {};
 
 const rulesStarted = {};
 const rulesProcessed = [];
@@ -219,9 +220,12 @@ function cancelExecution(infosphereEvent, eventCtx, commitCallback) {
       const data = execObj.project + "," + execObj.rule + "," + execObj.mRuleCmdStarted.toISOString() + "," + execObj.mRuleCmdReturned.toISOString() + "," + execObj.mFinalEventRaised.toISOString() + "," + (execObj.mRuleCmdReturned - execObj.mRuleCmdStarted) + "," + (execObj.mFinalEventRaised - execObj.mRuleCmdStarted) + ",-1,-1,-1,-1,-1\n";
       fs.writeFileSync(filename, data, 'utf8');
       cleanUp(execObj);
-      recordCompletion(execObj.rule);
       commitCallback(eventCtx);
-      runNextRule();
+      if (!failedRulesProcessed.hasOwnProperty(ruleId)) {
+        recordCompletion(execObj.rule);
+        failedRulesProcessed[ruleId] = idOfFailed;
+        runNextRule();
+      }
     } else {
       console.log("Found un-tracked failure of (" + ruleId + "): " + idOfFailed);
       cleanupUntracked(ruleId, eventCtx, commitCallback);
