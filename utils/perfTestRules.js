@@ -73,6 +73,8 @@ const infosphereEventEmitter = new iiskafka.InfosphereEventEmitter(argv.zookeepe
 
 infosphereEventEmitter.on('NEW_EXCEPTIONS_EVENT', closeExecution);
 infosphereEventEmitter.on('IA_DATARULE_FAILED_EVENT', cancelExecution);
+infosphereEventEmitter.on('IA_DATARULE_RUNNING_EVENT', trackRunning);
+infosphereEventEmitter.on('IA_DATARULE_COMPLETED_EVENT', trackCompleted);
 infosphereEventEmitter.on('error', function(errMsg) {
   console.error("Received 'error' -- aborting process: " + errMsg);
   process.exit(1);
@@ -93,13 +95,14 @@ const rulesProcessed = [];
 const ruleIds = Object.keys(ruleExecutions);
 const iTotalRules = ruleIds.length;
 
-let currentRule = 0;
-runNextRule(currentRule++);
+let currentRule = -1;
+runNextRule();
 
-function runNextRule(index) {
+function runNextRule() {
 
-  if (index < iTotalRules) {
-    const ruleId = ruleIds[index];
+  currentRule++;
+  if (currentRule < iTotalRules) {
+    const ruleId = ruleIds[currentRule];
     const projName = ruleId.substring(0, ruleId.indexOf("::"));
     const ruleName = ruleId.substring(ruleId.indexOf("::") + 2);
     ruleExecutions[ruleId].project = projName;
@@ -114,7 +117,7 @@ function runNextRule(index) {
     console.log("  --> " + cmdExecRule);
     ruleExecutions[ruleId].mRuleCmdStarted = moment();
     const result = shell.exec(cmdExecRule, {silent: true, "shell": "/bin/bash", async: true});
-    rulesStarted[ruleId] = true;
+    rulesStarted[ruleId] = {};
     result.on('close', (code) => {
       ruleExecutions[ruleId].mRuleCmdReturned = moment();
       ruleExecutions[ruleId].exitCode = code;
@@ -152,7 +155,7 @@ function checkAndOutputResults(execObj) {
     fs.writeFileSync(filename, data, 'utf8');
     cleanUp(execObj);
     recordCompletion(execObj.rule);
-    runNextRule(currentRule++);
+    runNextRule();
   }
 }
 
@@ -165,12 +168,39 @@ function recordCompletion(ruleId) {
   }
 }
 
+function trackRunning(infosphereEvent, eventCtx, commitCallback) {
+  const ruleId = ruleIds[currentRule];
+  const idOfRunning = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
+  rulesStarted[ruleId][idOfRunning] = true;
+  console.log("Tracking running rule (" + ruleId + "): " + idOfRunning);
+  commitCallback(eventCtx);
+}
+
+function trackCompleted(infosphereEvent, eventCtx, commitCallback) {
+  const ruleId = ruleIds[currentRule];
+  const idsOfRunning = rulesStarted[ruleId];
+  const idOfCompleted = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
+  if (idsOfRunning.hasOwnProperty(idOfCompleted)) {
+    console.log("Found tracked completion of (" + ruleId + "): " + idOfCompleted);
+  } else {
+    console.log("Found un-tracked completion of (" + ruleId + "): " + idOfCompleted);
+  }
+  commitCallback(eventCtx);
+}
+
 function cancelExecution(infosphereEvent, eventCtx, commitCallback) {
   console.error("ERROR: Execution of last rule failed.");
   const ruleId = ruleIds[currentRule];
   console.log(" ... rule: " + ruleId);
   if (rulesStarted.hasOwnProperty(ruleId)) {
     console.error(" ... attempting to close and clean the failed rule ...");
+    const idsOfRunning = rulesStarted[ruleId];
+    const idOfFailed = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
+    if (idsOfRunning.hasOwnProperty(idOfFailed)) {
+      console.log("Found tracked failure of (" + ruleId + "): " + idOfFailed);
+    } else {
+      console.log("Found un-tracked failure of (" + ruleId + "): " + idOfFailed);
+    }
     const execObj = ruleExecutions[ruleId];
     execObj.mFinalEventRaised = moment();
     const filename = getBaseFilename(execObj.project, execObj.rule) + "__failed.csv";
@@ -179,7 +209,7 @@ function cancelExecution(infosphereEvent, eventCtx, commitCallback) {
     cleanUp(execObj);
     recordCompletion(execObj.rule);
     commitCallback(eventCtx);
-    runNextRule(currentRule++);
+    runNextRule();
   } else {
     console.log("Found execution that we were not tracking -- cleaning it: " + ruleId);
     const projName = ruleId.substring(0, ruleId.indexOf("::"));
