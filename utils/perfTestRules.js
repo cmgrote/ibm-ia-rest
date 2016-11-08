@@ -168,8 +168,9 @@ function recordCompletion(ruleId) {
 function cancelExecution(infosphereEvent, eventCtx, commitCallback) {
   console.error("ERROR: Execution of last rule failed.");
   const ruleId = ruleIds[currentRule];
+  console.log(" ... rule: " + ruleId);
   if (rulesStarted.hasOwnProperty(ruleId)) {
-    console.error(" ... Attempting to close and clean the failed rule.");
+    console.error(" ... attempting to close and clean the failed rule ...");
     const execObj = ruleExecutions[ruleId];
     execObj.mFinalEventRaised = moment();
     const filename = getBaseFilename(execObj.project, execObj.rule) + "__failed.csv";
