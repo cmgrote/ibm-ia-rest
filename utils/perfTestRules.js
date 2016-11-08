@@ -90,6 +90,8 @@ function getRuleIdentityString(projectName, ruleName) {
 
 const ruleExecutions = JSON.parse(fs.readFileSync(argv.file, 'utf8'));
 
+const nonObviousIdToRuleId = {};
+
 const rulesStarted = {};
 const rulesProcessed = [];
 const ruleIds = Object.keys(ruleExecutions);
@@ -172,6 +174,7 @@ function trackRunning(infosphereEvent, eventCtx, commitCallback) {
   const ruleId = ruleIds[currentRule];
   const idOfRunning = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
   rulesStarted[ruleId][idOfRunning] = true;
+  nonObviousIdToRuleId[idOfRunning] = ruleId;
   console.log("Tracking running rule (" + ruleId + "): " + idOfRunning);
   commitCallback(eventCtx);
 }
@@ -188,34 +191,43 @@ function trackCompleted(infosphereEvent, eventCtx, commitCallback) {
   commitCallback(eventCtx);
 }
 
+function cleanupUntracked(ruleId, eventCtx, commitCallback) {
+  console.log("Found execution that we were not tracking -- cleaning it: " + ruleId);
+  const projName = ruleId.substring(0, ruleId.indexOf("::"));
+  const ruleName = ruleId.substring(ruleId.indexOf("::") + 2);
+  cleanUp({"project": projName, "rule": ruleName});
+  commitCallback(eventCtx);
+}
+
 function cancelExecution(infosphereEvent, eventCtx, commitCallback) {
   console.error("ERROR: Execution of last rule failed.");
-  const ruleId = ruleIds[currentRule];
+  const idOfFailed = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
+  let ruleId = ruleIds[currentRule];
+  if (nonObviousIdToRuleId.hasOwnProperty(idOfFailed)) {
+    console.log(" ... found more definitive rule ID");
+    ruleId = nonObviousIdToRuleId[idOfFailed];
+  }
   console.log(" ... rule: " + ruleId);
   if (rulesStarted.hasOwnProperty(ruleId)) {
     console.error(" ... attempting to close and clean the failed rule ...");
     const idsOfRunning = rulesStarted[ruleId];
-    const idOfFailed = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
     if (idsOfRunning.hasOwnProperty(idOfFailed)) {
       console.log("Found tracked failure of (" + ruleId + "): " + idOfFailed);
+      const execObj = ruleExecutions[ruleId];
+      execObj.mFinalEventRaised = moment();
+      const filename = getBaseFilename(execObj.project, execObj.rule) + "__failed.csv";
+      const data = execObj.project + "," + execObj.rule + "," + execObj.mRuleCmdStarted.toISOString() + "," + execObj.mRuleCmdReturned.toISOString() + "," + execObj.mFinalEventRaised.toISOString() + "," + (execObj.mRuleCmdReturned - execObj.mRuleCmdStarted) + "," + (execObj.mFinalEventRaised - execObj.mRuleCmdStarted) + ",-1,-1,-1,-1,-1\n";
+      fs.writeFileSync(filename, data, 'utf8');
+      cleanUp(execObj);
+      recordCompletion(execObj.rule);
+      commitCallback(eventCtx);
+      runNextRule();
     } else {
       console.log("Found un-tracked failure of (" + ruleId + "): " + idOfFailed);
+      cleanupUntracked(ruleId, eventCtx, commitCallback);
     }
-    const execObj = ruleExecutions[ruleId];
-    execObj.mFinalEventRaised = moment();
-    const filename = getBaseFilename(execObj.project, execObj.rule) + "__failed.csv";
-    const data = execObj.project + "," + execObj.rule + "," + execObj.mRuleCmdStarted.toISOString() + "," + execObj.mRuleCmdReturned.toISOString() + "," + execObj.mFinalEventRaised.toISOString() + "," + (execObj.mRuleCmdReturned - execObj.mRuleCmdStarted) + "," + (execObj.mFinalEventRaised - execObj.mRuleCmdStarted) + ",-1,-1,-1,-1,-1\n";
-    fs.writeFileSync(filename, data, 'utf8');
-    cleanUp(execObj);
-    recordCompletion(execObj.rule);
-    commitCallback(eventCtx);
-    runNextRule();
   } else {
-    console.log("Found execution that we were not tracking -- cleaning it: " + ruleId);
-    const projName = ruleId.substring(0, ruleId.indexOf("::"));
-    const ruleName = ruleId.substring(ruleId.indexOf("::") + 2);
-    cleanUp({"project": projName, "rule": ruleName});
-    commitCallback(eventCtx);
+    cleanupUntracked(ruleId, eventCtx, commitCallback);
   }
 }
 
