@@ -204,7 +204,7 @@ function cancelExecution(infosphereEvent, eventCtx, commitCallback) {
     const execObj = ruleExecutions[ruleId];
     execObj.mFinalEventRaised = moment();
     const filename = getBaseFilename(execObj.project, execObj.rule) + "__failed.csv";
-    const data = execObj.project + "," + execObj.rule + "," + execObj.mRuleCmdStarted.toISOString() + "," + execObj.mRuleCmdReturned.toISOString() + "," + execObj.mFinalEventRaised.toISOString() + "," + (execObj.mRuleCmdReturned - execObj.mRuleCmdStarted) + "," + (execObj.mFinalEventRaised - execObj.mRuleCmdStarted) + "," + execObj.mRecordedStart.toISOString() + "," + execObj.mRecordedEnd.toISOString() + "," + (execObj.mRecordedEnd - execObj.mRecordedStart) + ",-1,-1\n";
+    const data = execObj.project + "," + execObj.rule + "," + execObj.mRuleCmdStarted.toISOString() + "," + execObj.mRuleCmdReturned.toISOString() + "," + execObj.mFinalEventRaised.toISOString() + "," + (execObj.mRuleCmdReturned - execObj.mRuleCmdStarted) + "," + (execObj.mFinalEventRaised - execObj.mRuleCmdStarted) + ",-1,-1,-1,-1,-1\n";
     fs.writeFileSync(filename, data, 'utf8');
     cleanUp(execObj);
     recordCompletion(execObj.rule);
