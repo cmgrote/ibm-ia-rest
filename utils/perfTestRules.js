@@ -178,6 +178,12 @@ function cancelExecution(infosphereEvent, eventCtx, commitCallback) {
     recordCompletion(execObj.rule);
     commitCallback(eventCtx);
     runNextRule(currentRule++);
+  } else {
+    console.log("Found execution that we were not tracking -- cleaning it: " + ruleId);
+    const projName = ruleId.substring(0, ruleId.indexOf("::"));
+    const ruleName = ruleId.substring(ruleId.indexOf("::") + 2);
+    cleanUp({"project": projName, "rule": ruleName});
+    commitCallback(eventCtx);
   }
 }
 
