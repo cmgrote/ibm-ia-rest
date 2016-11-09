@@ -159,6 +159,8 @@ function checkAndOutputResults(execObj) {
     cleanUp(execObj);
     recordCompletion(execObj.rule);
     runNextRule();
+  } else {
+    console.error("ERROR: Missing either command return or final event");
   }
 }
 
@@ -254,6 +256,9 @@ function closeExecution(infosphereEvent, eventCtx, commitCallback) {
         execObj.mRecordedEnd = moment(stat.dEnd);
         execObj.numFailed = stat.numFailed;
         execObj.numTotal = stat.numTotal;
+        if (!execObj.hasOwnProperty('mRuleCmdReturned')) {
+          execObj.mRuleCmdReturned = moment();
+        }
         checkAndOutputResults(execObj);
         commitCallback(eventCtx);
       }
