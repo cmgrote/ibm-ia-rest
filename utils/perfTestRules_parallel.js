@@ -72,6 +72,9 @@ iarest.setConnection(restConnect);
 const infosphereEventEmitter = new iiskafka.InfosphereEventEmitter(argv.zookeeper, 'ia-perf-test', false);
 
 infosphereEventEmitter.on('NEW_EXCEPTIONS_EVENT', closeExecution);
+infosphereEventEmitter.on('IA_DATARULE_FAILED_EVENT', cancelExecution);
+infosphereEventEmitter.on('IA_DATARULE_RUNNING_EVENT', trackRunning);
+infosphereEventEmitter.on('IA_DATARULE_COMPLETED_EVENT', trackCompleted);
 infosphereEventEmitter.on('error', function(errMsg) {
   console.error("Received 'error' -- aborting process: " + errMsg);
   process.exit(1);
@@ -87,20 +90,24 @@ function getRuleIdentityString(projectName, ruleName) {
 
 const ruleExecutions = JSON.parse(fs.readFileSync(argv.file, 'utf8'));
 
+const nonObviousIdToRuleId = {};
+const failedRulesProcessed = {};
+
 const rulesStarted = {};
 const rulesProcessed = [];
 const ruleIds = Object.keys(ruleExecutions);
 const iTotalRules = ruleIds.length;
 
 let iRulesRunning = 0;
-let currentRule = 0;
+let currentRule = -1;
 // Wait 10 seconds before kicking off the first rule to allow time to drain any processing in the queue
-setTimeout(runNextRule, 10000, currentRule++);
+setTimeout(runNextRule, 10000);
 
-function runNextRule(index) {
+function runNextRule() {
 
-  if (index < iTotalRules) {
-    const ruleId = ruleIds[index];
+  currentRule++;
+  if (currentRule < iTotalRules) {
+    const ruleId = ruleIds[currentRule];
     const projName = ruleId.substring(0, ruleId.indexOf("::"));
     const ruleName = ruleId.substring(ruleId.indexOf("::") + 2);
     ruleExecutions[ruleId].project = projName;
@@ -114,7 +121,6 @@ function runNextRule(index) {
         " -run '" + projName + "' '" + ruleName + "'";
     console.log("  --> " + cmdExecRule);
     ruleExecutions[ruleId].mRuleCmdStarted = moment();
-    /*const result =*/
     shell.exec(cmdExecRule, {silent: true, "shell": "/bin/bash", maxBuffer: 1000*1024}, function(code, stdout, stderr) {
       ruleExecutions[ruleId].mRuleCmdReturned = moment();
       ruleExecutions[ruleId].exitCode = code;
@@ -125,26 +131,12 @@ function runNextRule(index) {
       } else {
         console.log(stdout);
       }
-      checkAndOutputResults(ruleExecutions[ruleId]);
       iRulesRunning--;
     });
     iRulesRunning++;
     rulesStarted[ruleId] = true;
-/*    result.on('exit', (code, signal) => {
-      ruleExecutions[ruleId].mRuleCmdReturned = moment();
-      ruleExecutions[ruleId].exitCode = code;
-      if (signal !== null) {
-        console.error("Processing interrupted: " + signal);
-      }
-      if (code !== 0) {
-        console.error("ERROR executing IA rule: " + ruleId);
-      }
-      checkAndOutputResults(ruleExecutions[ruleId]);
-      iRulesRunning--;
-    }); */
-    // Allow a 10-second gap between starting rules to avoid possible race conditions / deadlocks
-    setTimeout(runNextRule, 20000, currentRule++);
-    //runNextRule(currentRule++);
+    // Allow a 20-second gap between starting rules to avoid possible race conditions / deadlocks
+    setTimeout(runNextRule, 20000);
   }
 
 }
@@ -175,6 +167,8 @@ function checkAndOutputResults(execObj) {
     fs.writeFileSync(filename, data, 'utf8');
     cleanUp(execObj);
     recordCompletion(execObj.rule);
+  } else {
+    console.error("ERROR: Missing either command return or final event");
   }
 }
 
@@ -184,6 +178,70 @@ function recordCompletion(ruleId) {
   }
   if (iTotalRules === rulesProcessed.length) {
     infosphereEventEmitter.emit('end');
+  }
+}
+
+function trackRunning(infosphereEvent, eventCtx, commitCallback) {
+  const ruleId = ruleIds[currentRule];
+  const idOfRunning = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
+  rulesStarted[ruleId][idOfRunning] = true;
+  nonObviousIdToRuleId[idOfRunning] = ruleId;
+  console.log("Tracking running rule (" + ruleId + "): " + idOfRunning);
+  commitCallback(eventCtx);
+}
+
+function trackCompleted(infosphereEvent, eventCtx, commitCallback) {
+  const ruleId = ruleIds[currentRule];
+  const idsOfRunning = rulesStarted[ruleId];
+  const idOfCompleted = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
+  if (idsOfRunning.hasOwnProperty(idOfCompleted)) {
+    console.log("Found tracked completion of (" + ruleId + "): " + idOfCompleted);
+  } else {
+    console.log("Found un-tracked completion of (" + ruleId + "): " + idOfCompleted);
+  }
+  commitCallback(eventCtx);
+}
+
+function cleanupUntracked(ruleId, eventCtx, commitCallback) {
+  console.log("Found execution that we were not tracking -- cleaning it: " + ruleId);
+  const projName = ruleId.substring(0, ruleId.indexOf("::"));
+  const ruleName = ruleId.substring(ruleId.indexOf("::") + 2);
+  cleanUp({"project": projName, "rule": ruleName});
+  commitCallback(eventCtx);
+}
+
+function cancelExecution(infosphereEvent, eventCtx, commitCallback) {
+  console.error("ERROR: Execution of last rule failed.");
+  const idOfFailed = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
+  let ruleId = ruleIds[currentRule];
+  if (nonObviousIdToRuleId.hasOwnProperty(idOfFailed)) {
+    console.log(" ... found more definitive rule ID");
+    ruleId = nonObviousIdToRuleId[idOfFailed];
+  }
+  console.log(" ... rule: " + ruleId);
+  if (rulesStarted.hasOwnProperty(ruleId)) {
+    console.error(" ... attempting to close and clean the failed rule ...");
+    const idsOfRunning = rulesStarted[ruleId];
+    if (idsOfRunning.hasOwnProperty(idOfFailed)) {
+      console.log("Found tracked failure of (" + ruleId + "): " + idOfFailed);
+      const execObj = ruleExecutions[ruleId];
+      execObj.mFinalEventRaised = moment();
+      const filename = getBaseFilename(execObj.project, execObj.rule) + "__failed.csv";
+      const data = execObj.project + "," + execObj.rule + "," + execObj.mRuleCmdStarted.toISOString() + "," + execObj.mRuleCmdReturned.toISOString() + "," + execObj.mFinalEventRaised.toISOString() + "," + (execObj.mRuleCmdReturned - execObj.mRuleCmdStarted) + "," + (execObj.mFinalEventRaised - execObj.mRuleCmdStarted) + ",-1,-1,-1,-1,-1\n";
+      fs.writeFileSync(filename, data, 'utf8');
+      cleanUp(execObj);
+      commitCallback(eventCtx);
+      if (!failedRulesProcessed.hasOwnProperty(ruleId)) {
+        recordCompletion(execObj.rule);
+        failedRulesProcessed[ruleId] = idOfFailed;
+        runNextRule();
+      }
+    } else {
+      console.log("Found un-tracked failure of (" + ruleId + "): " + idOfFailed);
+      cleanupUntracked(ruleId, eventCtx, commitCallback);
+    }
+  } else {
+    cleanupUntracked(ruleId, eventCtx, commitCallback);
   }
 }
 
@@ -206,6 +264,9 @@ function closeExecution(infosphereEvent, eventCtx, commitCallback) {
         execObj.mRecordedEnd = moment(stat.dEnd);
         execObj.numFailed = stat.numFailed;
         execObj.numTotal = stat.numTotal;
+        if (!execObj.hasOwnProperty('mRuleCmdReturned')) {
+          execObj.mRuleCmdReturned = moment();
+        }
         checkAndOutputResults(execObj);
         commitCallback(eventCtx);
       }
