@@ -66,6 +66,8 @@ const infosphereEventEmitter = new iiskafka.InfosphereEventEmitter(argv.zookeepe
 
 infosphereEventEmitter.on('NEW_EXCEPTIONS_EVENT', drainExecution);
 infosphereEventEmitter.on('IA_DATARULE_FAILED_EVENT', drainExecutionByCommit);
+infosphereEventEmitter.on('IA_DATARULE_RUNNING_EVENT', drainExecutionByCommit);
+infosphereEventEmitter.on('IA_DATARULE_COMPLETED_EVENT', drainExecutionByCommit);
 infosphereEventEmitter.on('error', function(errMsg) {
   console.error("Received 'error' -- aborting process: " + errMsg);
   process.exit(1);
