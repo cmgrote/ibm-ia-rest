@@ -134,7 +134,7 @@ function runNextRule() {
       iRulesRunning--;
     });
     iRulesRunning++;
-    rulesStarted[ruleId] = true;
+    rulesStarted[ruleId] = {};
     // Allow a 20-second gap between starting rules to avoid possible race conditions / deadlocks
     setTimeout(runNextRule, 20000);
   }
