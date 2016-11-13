@@ -199,7 +199,7 @@ function trackCompleted(infosphereEvent, eventCtx, commitCallback) {
   if (typeof ruleId !== undefined && ruleId !== null) {
     const idsOfRunning = rulesStarted[ruleId];
     const idOfCompleted = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
-    if (idsOfRunning.hasOwnProperty(idOfCompleted)) {
+    if (rulesStarted.hasOwnProperty(ruleId) && idsOfRunning.hasOwnProperty(idOfCompleted)) {
       console.log("Found tracked completion of (" + ruleId + "): " + idOfCompleted);
     } else {
       console.log("Found un-tracked completion of (" + ruleId + "): " + idOfCompleted);
@@ -231,7 +231,7 @@ function cancelExecution(infosphereEvent, eventCtx, commitCallback) {
     if (rulesStarted.hasOwnProperty(ruleId)) {
       console.error(" ... attempting to close and clean the failed rule ...");
       const idsOfRunning = rulesStarted[ruleId];
-      if (idsOfRunning.hasOwnProperty(idOfFailed)) {
+      if (rulesStarted.hasOwnProperty(ruleId) && idsOfRunning.hasOwnProperty(idOfFailed)) {
         console.log("Found tracked failure of (" + ruleId + "): " + idOfFailed);
         const execObj = ruleExecutions[ruleId];
         execObj.mFinalEventRaised = moment();
