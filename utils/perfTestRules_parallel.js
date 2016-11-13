@@ -235,6 +235,9 @@ function cancelExecution(infosphereEvent, eventCtx, commitCallback) {
         console.log("Found tracked failure of (" + ruleId + "): " + idOfFailed);
         const execObj = ruleExecutions[ruleId];
         execObj.mFinalEventRaised = moment();
+        if (!execObj.hasOwnProperty('mRuleCmdReturned')) {
+          execObj.mRuleCmdReturned = moment();
+        }
         const filename = getBaseFilename(execObj.project, execObj.rule) + "__failed.csv";
         const data = execObj.project + "," + execObj.rule + "," + execObj.mRuleCmdStarted.toISOString() + "," + execObj.mRuleCmdReturned.toISOString() + "," + execObj.mFinalEventRaised.toISOString() + "," + (execObj.mRuleCmdReturned - execObj.mRuleCmdStarted) + "," + (execObj.mFinalEventRaised - execObj.mRuleCmdStarted) + ",-1,-1,-1,-1,-1\n";
         fs.writeFileSync(filename, data, 'utf8');
