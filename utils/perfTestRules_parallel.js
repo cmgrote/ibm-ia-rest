@@ -183,21 +183,29 @@ function recordCompletion(ruleId) {
 
 function trackRunning(infosphereEvent, eventCtx, commitCallback) {
   const ruleId = ruleIds[currentRule];
-  const idOfRunning = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
-  rulesStarted[ruleId][idOfRunning] = true;
-  nonObviousIdToRuleId[idOfRunning] = ruleId;
-  console.log("Tracking running rule (" + ruleId + "): " + idOfRunning);
+  if (typeof ruleId !== undefined && ruleId !== null) {
+    const idOfRunning = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
+    rulesStarted[ruleId][idOfRunning] = true;
+    nonObviousIdToRuleId[idOfRunning] = ruleId;
+    console.log("Tracking running rule (" + ruleId + "): " + idOfRunning);
+  } else {
+    console.log("Attempted to track a running rule beyond the span of the running rules (" + currentRule + ").");
+  }
   commitCallback(eventCtx);
 }
 
 function trackCompleted(infosphereEvent, eventCtx, commitCallback) {
   const ruleId = ruleIds[currentRule];
-  const idsOfRunning = rulesStarted[ruleId];
-  const idOfCompleted = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
-  if (idsOfRunning.hasOwnProperty(idOfCompleted)) {
-    console.log("Found tracked completion of (" + ruleId + "): " + idOfCompleted);
+  if (typeof ruleId !== undefined && ruleId !== null) {
+    const idsOfRunning = rulesStarted[ruleId];
+    const idOfCompleted = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
+    if (idsOfRunning.hasOwnProperty(idOfCompleted)) {
+      console.log("Found tracked completion of (" + ruleId + "): " + idOfCompleted);
+    } else {
+      console.log("Found un-tracked completion of (" + ruleId + "): " + idOfCompleted);
+    }
   } else {
-    console.log("Found un-tracked completion of (" + ruleId + "): " + idOfCompleted);
+    console.log("Attempted to track a completed rule beyond the span of the running rules (" + currentRule + ").");
   }
   commitCallback(eventCtx);
 }
@@ -218,30 +226,34 @@ function cancelExecution(infosphereEvent, eventCtx, commitCallback) {
     console.log(" ... found more definitive rule ID");
     ruleId = nonObviousIdToRuleId[idOfFailed];
   }
-  console.log(" ... rule: " + ruleId);
-  if (rulesStarted.hasOwnProperty(ruleId)) {
-    console.error(" ... attempting to close and clean the failed rule ...");
-    const idsOfRunning = rulesStarted[ruleId];
-    if (idsOfRunning.hasOwnProperty(idOfFailed)) {
-      console.log("Found tracked failure of (" + ruleId + "): " + idOfFailed);
-      const execObj = ruleExecutions[ruleId];
-      execObj.mFinalEventRaised = moment();
-      const filename = getBaseFilename(execObj.project, execObj.rule) + "__failed.csv";
-      const data = execObj.project + "," + execObj.rule + "," + execObj.mRuleCmdStarted.toISOString() + "," + execObj.mRuleCmdReturned.toISOString() + "," + execObj.mFinalEventRaised.toISOString() + "," + (execObj.mRuleCmdReturned - execObj.mRuleCmdStarted) + "," + (execObj.mFinalEventRaised - execObj.mRuleCmdStarted) + ",-1,-1,-1,-1,-1\n";
-      fs.writeFileSync(filename, data, 'utf8');
-      cleanUp(execObj);
-      commitCallback(eventCtx);
-      if (!failedRulesProcessed.hasOwnProperty(ruleId)) {
-        recordCompletion(execObj.rule);
-        failedRulesProcessed[ruleId] = idOfFailed;
-        runNextRule();
+  if (typeof ruleId !== undefined && ruleId !== null) {
+    console.log(" ... rule: " + ruleId);
+    if (rulesStarted.hasOwnProperty(ruleId)) {
+      console.error(" ... attempting to close and clean the failed rule ...");
+      const idsOfRunning = rulesStarted[ruleId];
+      if (idsOfRunning.hasOwnProperty(idOfFailed)) {
+        console.log("Found tracked failure of (" + ruleId + "): " + idOfFailed);
+        const execObj = ruleExecutions[ruleId];
+        execObj.mFinalEventRaised = moment();
+        const filename = getBaseFilename(execObj.project, execObj.rule) + "__failed.csv";
+        const data = execObj.project + "," + execObj.rule + "," + execObj.mRuleCmdStarted.toISOString() + "," + execObj.mRuleCmdReturned.toISOString() + "," + execObj.mFinalEventRaised.toISOString() + "," + (execObj.mRuleCmdReturned - execObj.mRuleCmdStarted) + "," + (execObj.mFinalEventRaised - execObj.mRuleCmdStarted) + ",-1,-1,-1,-1,-1\n";
+        fs.writeFileSync(filename, data, 'utf8');
+        cleanUp(execObj);
+        commitCallback(eventCtx);
+        if (!failedRulesProcessed.hasOwnProperty(ruleId)) {
+          recordCompletion(execObj.rule);
+          failedRulesProcessed[ruleId] = idOfFailed;
+          runNextRule();
+        }
+      } else {
+        console.log("Found un-tracked failure of (" + ruleId + "): " + idOfFailed);
+        cleanupUntracked(ruleId, eventCtx, commitCallback);
       }
     } else {
-      console.log("Found un-tracked failure of (" + ruleId + "): " + idOfFailed);
       cleanupUntracked(ruleId, eventCtx, commitCallback);
     }
   } else {
-    cleanupUntracked(ruleId, eventCtx, commitCallback);
+    console.log("Attempted to cancel a failed rule beyond the span of the running rules (" + currentRule + ").");
   }
 }
 
