@@ -77,21 +77,30 @@ infosphereEventEmitter.on('end', function() {
   process.exit();
 });
 
+let noMoreChanges = setTimeout(quitPolling, 20000);
+function quitPolling() {
+  infosphereEventEmitter.emit('end');
+}
+
 function getRuleIdentityString(projectName, ruleName) {
   return projectName + "::" + ruleName;
 }
 
 function drainExecution(infosphereEvent, eventCtx, commitCallback) {
+  clearTimeout(noMoreChanges);
   const ruleName = infosphereEvent.exceptionSummaryName;
   const projName = infosphereEvent.projectName;
   const ruleId = getRuleIdentityString(projName, ruleName);
   console.log("Found left-over execution -- cleaning it: " + ruleId);
   cleanUp({"project": projName, "rule": ruleName});
   commitCallback(eventCtx);
+  noMoreChanges = setTimeout(quitPolling, 20000);
 }
 
 function drainExecutionByCommit(InfosphereEvent, eventCtx, commitCallback) {
+  clearTimeout(noMoreChanges);
   commitCallback(eventCtx);
+  noMoreChanges = setTimeout(quitPolling, 20000);
 }
 
 function cleanUp(execObj) {
