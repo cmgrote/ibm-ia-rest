@@ -183,7 +183,7 @@ function recordCompletion(ruleId) {
 
 function trackRunning(infosphereEvent, eventCtx, commitCallback) {
   const ruleId = ruleIds[currentRule];
-  if (typeof ruleId !== undefined && ruleId !== null) {
+  if (ruleId !== undefined && ruleId !== null) {
     const idOfRunning = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
     rulesStarted[ruleId][idOfRunning] = true;
     nonObviousIdToRuleId[idOfRunning] = ruleId;
@@ -196,7 +196,7 @@ function trackRunning(infosphereEvent, eventCtx, commitCallback) {
 
 function trackCompleted(infosphereEvent, eventCtx, commitCallback) {
   const ruleId = ruleIds[currentRule];
-  if (typeof ruleId !== undefined && ruleId !== null) {
+  if (ruleId !== undefined && ruleId !== null) {
     const idsOfRunning = rulesStarted[ruleId];
     const idOfCompleted = infosphereEvent.projectRid + "|" + infosphereEvent.ruleRid + "|" + infosphereEvent.tamRid;
     if (rulesStarted.hasOwnProperty(ruleId) && idsOfRunning.hasOwnProperty(idOfCompleted)) {
@@ -226,7 +226,7 @@ function cancelExecution(infosphereEvent, eventCtx, commitCallback) {
     console.log(" ... found more definitive rule ID");
     ruleId = nonObviousIdToRuleId[idOfFailed];
   }
-  if (typeof ruleId !== undefined && ruleId !== null) {
+  if (ruleId !== undefined && ruleId !== null) {
     console.log(" ... rule: " + ruleId);
     if (rulesStarted.hasOwnProperty(ruleId)) {
       console.error(" ... attempting to close and clean the failed rule ...");
