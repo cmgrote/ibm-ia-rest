@@ -26,7 +26,7 @@ const ColumnAnalysis = require('./classes/column-analysis');
 const PublishResults = require('./classes/publish-results');
 
 /**
- * @file Re-usable functions for interacting with IA's REST API
+ * @file Re-usable functions for interacting with Information Analyzer's REST API
  * @license Apache-2.0
  * @requires https
  * @requires xmldom

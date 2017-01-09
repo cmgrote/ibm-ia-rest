@@ -4,7 +4,7 @@
 
 ## RestIA
 
-Re-usable functions for interacting with IA's REST API
+Re-usable functions for interacting with Information Analyzer's REST API
 
 **Examples**
 
