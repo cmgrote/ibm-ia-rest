@@ -21,12 +21,8 @@ function _getValueOrDefault(val, def) {
 }
 
 /**
- * @file ColumnAnalysis class -- for handling Information Analyzer column analysis tasks
+ * ColumnAnalysis class -- for handling Information Analyzer column analysis tasks
  * @license Apache-2.0
- */
-
-/**
- * @namespace
  */
 class ColumnAnalysis {
 

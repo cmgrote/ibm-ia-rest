@@ -19,13 +19,8 @@
 const xmldom = require('xmldom');
 
 /**
- * @file Project class -- for handling Information Analyzer projects
- * @requires xmldom
+ * Project class -- for handling Information Analyzer projects
  * @license Apache-2.0
- */
-
-/**
- * @namespace
  */
 class Project {
 

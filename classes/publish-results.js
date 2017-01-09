@@ -17,12 +17,8 @@
 "use strict";
 
 /**
- * @file PublishResults class -- for handling Information Analyzer results publishing tasks
+ * PublishResults class -- for handling Information Analyzer results publishing tasks
  * @license Apache-2.0
- */
-
-/**
- * @namespace
  */
 class PublishResults {
 
