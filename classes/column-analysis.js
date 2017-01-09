@@ -18,7 +18,6 @@
 
 /**
  * @file ColumnAnalysis class -- for handling Information Analyzer column analysis tasks
- * @requires xmldom
  * @license Apache-2.0
  */
 

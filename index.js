@@ -16,13 +16,22 @@
 
 "use strict";
 
+const https = require('https');
+const xmldom = require('xmldom');
+const xpath = require('xpath');
+const igcrest = require('ibm-igc-rest');
+
+const Project = require('./classes/project');
+const ColumnAnalysis = require('./classes/column-analysis');
+const PublishResults = require('./classes/publish-results');
+
 /**
  * @file Re-usable functions for interacting with IA's REST API
  * @license Apache-2.0
+ * @requires https
  * @requires xmldom
  * @requires xpath
  * @requires ibm-igc-rest
- * @requires ibm-iis-commons
  * @example
  * // runs column analysis for any objects in Automated Profiling that have not been analyzed since the moment the script is run (new Date())
  * var iarest = require('ibm-ia-rest');
@@ -39,16 +48,6 @@
 /**
  * @module ibm-ia-rest
  */
-
-const https = require('https');
-const xmldom = require('xmldom');
-const xpath = require('xpath');
-const igcrest = require('ibm-igc-rest');
-
-const Project = require('./classes/project');
-const ColumnAnalysis = require('./classes/column-analysis');
-const PublishResults = require('./classes/publish-results');
-
 const RestIA = (function() {
 
   const ignoreLabelName = "Information Analyzer Ignore List";

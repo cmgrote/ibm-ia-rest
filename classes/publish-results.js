@@ -18,7 +18,6 @@
 
 /**
  * @file PublishResults class -- for handling Information Analyzer results publishing tasks
- * @requires xmldom
  * @license Apache-2.0
  */
 

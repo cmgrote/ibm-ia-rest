@@ -16,13 +16,13 @@
 
 "use strict";
 
+const xmldom = require('xmldom');
+
 /**
  * @file Project class -- for handling Information Analyzer projects
  * @requires xmldom
  * @license Apache-2.0
  */
-
-const xmldom = require('xmldom');
 
 /**
  * @namespace
