@@ -60,7 +60,7 @@ Retrieves a list of all items that should be ignored, i.e. where they are labell
 
 ## addIADBToIgnoreList
 
-Adds the IADB schema to a list of objects for Information Analyzer to ignore (to prevent them being added to projects or being analysed); this is accomplished by creating a label 'InformationAnalyzer'
+Adds the IADB schema to a list of objects for Information Analyzer to ignore (to prevent them being added to projects or being analysed); this is accomplished by creating a label 'Information Analyzer Ignore List'
 
 **Parameters**
 
@@ -312,6 +312,87 @@ Add the specified file to the project
 -   `folder` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** the full path to the file
 -   `file` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** the name of the file
 -   `aFields` **[Array](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array)&lt;[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)>** array of field names within the file
+
+## ColumnAnalysis
+
+ColumnAnalysis class -- for handling Information Analyzer column analysis tasks
+
+**Meta**
+
+-   **license**: Apache-2.0
+
+### constructor
+
+**Parameters**
+
+-   `project` **[Project](#project)** the project in which to create the column analysis task
+-   `analyzeColumnProperties` **[boolean](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean)** whether or not to analyze column properties
+-   `captureResultsType` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** specifies the type of frequency distribution results that are written to the analysis database ["CAPTURE_NONE", "CAPTURE_ALL", "CAPTURE_N"]
+-   `minCaptureSize` **int** the minimum number of results that are written to the analysis database, including both typical and atypical values
+-   `maxCaptureSize` **int** the maximum number of results that are written to the analysis database
+-   `analyzeDataClasses` **[boolean](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean)** whether or not to analyze data classes
+
+### setSampleOptions
+
+Use to (optionally) set any sampling options for the column analysis
+
+**Parameters**
+
+-   `type` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** the sampling type ["random", "sequential", "every_nth"]
+-   `size` **[number](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number)** if less than 1.0, the percentage of values to use in the sample; otherwise the maximum number of records in the sample.  If you use the "random" type of data sample, specify the sample size that is the same number as the number of records that will be in the result, based on the value that you specify in the Percent field. Otherwise, the results might be skewed.
+-   `seed` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** if type is "random", this value is used to initialize the random generators (two samplings that use the same seed value will contain the same records)
+-   `step` **int** if type is "every_nth", this value indicates the step to apply (one row will be kept out of every nth value rows)
+
+### setEngineOptions
+
+Use to (optionally) set any engine options to use when running the column analysis
+
+**Parameters**
+
+-   `retainOSH` **[boolean](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean)** whether to retain the generated DataStage job or not
+-   `retainData` **[boolean](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean)** whether to retain generated data sets (ignored when data rules are running)
+-   `config` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** specifies an alternative configuration file to use with the DataStage engine during this run
+-   `gridEnabled` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** whether or not the grid view will be enabled
+-   `requestedNodes` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** the name of requested nodes
+-   `minNodes` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** the minimum number of nodes you want in the analysis
+-   `partitionsPerNode` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** the number of partitions for each node in the analysis
+
+### setJobOptions
+
+Use to (optionally) set any job options to use when running the column analysis
+
+**Parameters**
+
+-   `debugEnabled` **[boolean](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean)** whether to generate a debug table containing the evaluation results of all functions and tests contained in the expression (only used for running data rules)
+-   `numDebuggedRecords` **int** how many rows should be debugged, if debugEnabled is "true"
+-   `arraySize` **int** the size of the array (?)
+-   `autoCommit` **[boolean](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean)** 
+-   `isolationLevel` **int** 
+-   `updateExistingTables` **[boolean](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean)** whether to update existing tables in IADB or create new ones (only used for column analysis)
+
+### addColumn
+
+Use to add a column to the column analysis task -- both table and column can be '\*' to specify all tables or all columns
+
+**Parameters**
+
+-   `datasource` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** 
+-   `schema` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** 
+-   `table` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** 
+-   `column` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** 
+-   `hostname` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)?** 
+
+### addFileField
+
+Use to add a file field to the column analysis task -- column can be '\*' to specify all fields within the file
+
+**Parameters**
+
+-   `connection` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** e.g. "HDFS"
+-   `path` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** directory path, not including the filename
+-   `filename` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** 
+-   `column` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)** name of the field within the file
+-   `hostname` **[string](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String)?** 
 
 ## ColumnAnalysis
 

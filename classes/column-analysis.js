@@ -16,19 +16,18 @@
 
 "use strict";
 
-/**
- * @file ColumnAnalysis class -- for handling Information Analyzer column analysis tasks
- * @license Apache-2.0
- */
-
 function _getValueOrDefault(val, def) {
   return (val === undefined) ? def : val;
 }
 
 /**
- * @namespace
+ * @file ColumnAnalysis class -- for handling Information Analyzer column analysis tasks
+ * @license Apache-2.0
  */
 
+/**
+ * @namespace
+ */
 class ColumnAnalysis {
 
   /**

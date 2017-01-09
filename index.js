@@ -630,7 +630,7 @@ const RestIA = (function() {
             }]
           }
         };
-  console.log("Request: " + JSON.stringify(addFilesJSON));
+        console.log("Request: " + JSON.stringify(addFilesJSON));
         //exports.makeRequest('POST', endpoint, addFilesJSON, 'application/json', function(res, resUpdate) {
         makeRequest('POST', endpoint, addFilesJSON, 'application/json', function(res) {
           let err = null;
@@ -709,8 +709,6 @@ const RestIA = (function() {
    */
   function _createOrUpdateIgnoreList(callback) {
   
-    //var labelName = "Information Analyzer Ignore List";
-    //var labelDesc = "Information Analyzer should ignore any assets with this label; they should not be indexed.";
     const queryLabelExistence = {
       "properties": [ "name" ],
       "types": [ "label" ],
@@ -751,7 +749,7 @@ const RestIA = (function() {
   }
   
   /**
-   * Adds the IADB schema to a list of objects for Information Analyzer to ignore (to prevent them being added to projects or being analysed); this is accomplished by creating a label 'InformationAnalyzer'
+   * Adds the IADB schema to a list of objects for Information Analyzer to ignore (to prevent them being added to projects or being analysed); this is accomplished by creating a label 'Information Analyzer Ignore List'
    *
    * @param {requestCallback} callback - callback that handles the response
    */
