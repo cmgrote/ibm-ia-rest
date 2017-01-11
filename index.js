@@ -630,7 +630,7 @@ const RestIA = (function() {
             }]
           }
         };
-        console.log("Request: " + JSON.stringify(addFilesJSON));
+        //console.log("Request: " + JSON.stringify(addFilesJSON));
         //exports.makeRequest('POST', endpoint, addFilesJSON, 'application/json', function(res, resUpdate) {
         makeRequest('POST', endpoint, addFilesJSON, 'application/json', function(res) {
           let err = null;
@@ -951,9 +951,9 @@ const RestIA = (function() {
   
       const bCreate = (resList.indexOf(name) === -1);
       if (bCreate) {
-        console.log("Project not found, creating...");
+        console.log("Project '" + name + "' not found, creating...");
       } else {
-        console.log("Project found, updating...");
+        console.log("Project '" + name + "' found, updating...");
       }
   
       getAllItemsToIgnore(function(errIgnore, typesToIgnoreItems) {
