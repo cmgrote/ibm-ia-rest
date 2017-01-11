@@ -19,13 +19,14 @@
 "use strict";
 
 /**
- * @file Loads all rule-related assets into an environment from the specified file
+ * @file Loads all rule-related assets into an environment from the specified file, where the DataStage project must already exist (be created first, separately, if not)
  * @license Apache-2.0
  * @requires ibm-iis-commons
  * @requires shelljs
  * @requires yargs
  * @example
  * // imports all rule-related assets from the file /tmp/extract.tgz into DataStage project FWK, applying any mapings in /tmp/mapping.xml
+ * // NOTE: the DataStage project ('FWK' in the example) must already exist / be created
  * ./importAllRuleAssets.js -d 'FWK' -f /tmp/extract.tgz -m /tmp/mapping.xml
  */
 
@@ -44,7 +45,7 @@ const argv = yargs
     })
     .option('f', {
       alias: 'filepath',
-      describe: 'Path to the file in which to save assets',
+      describe: 'Path to the file from which to load assets',
       demand: true, requiresArg: true, type: 'string'
     })
     .option('m', {
