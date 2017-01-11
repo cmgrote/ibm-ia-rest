@@ -40,16 +40,16 @@
   "contributors": [
     {
       "name": "Christopher Grote",
-      "email": "christopher.grote@uk.ibm.com"
+      "email": "chris@thegrotes.net"
     }
   ],
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.ibm.com/christopher-grote/ibm-ia-rest.git"
+    "url": "https://github.com/cmgrote/ibm-ia-rest.git"
   },
   "bugs": {
-    "url": "https://github.ibm.com/christopher-grote/ibm-ia-rest/issues"
+    "url": "https://github.com/cmgrote/ibm-ia-rest/issues"
   },
-  "homepage": "https://github.ibm.com/christopher-grote/ibm-ia-rest"
+  "homepage": "https://github.com/cmgrote/ibm-ia-rest"
 }
