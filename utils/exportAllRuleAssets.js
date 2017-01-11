@@ -25,8 +25,8 @@
  * @requires shelljs
  * @requires yargs
  * @example
- * // exports all rule-related assets from the "DQ Experiments" Information Analyzer project and "FWK" DataStage project into /tmp/extract.tgz
- * ./exportAllRuleAssets.js -i 'DQ Experiments' -d 'FWK' -f /tmp/extract
+ * // exports all rule-related assets from the "DQ Experiments" Information Analyzer project and "DQ" DataStage project into /tmp/extract.tgz
+ * ./exportAllRuleAssets.js -i 'DQ Experiments' -d 'DQ' -f /tmp/extract
  */
 
 const commons = require('ibm-iis-commons');
