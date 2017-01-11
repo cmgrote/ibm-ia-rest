@@ -38,8 +38,8 @@ const PublishResults = require('./classes/publish-results');
  * var commons = require('ibm-iis-commons');
  * var restConnect = new commons.RestConnection("isadmin", "isadmin", "hostname", "9445");
  * iarest.setConnection(restConnect);
- * iarest.getStaleAnalysisResults("Automated Profiling", new Date(), function(errStale, aStaleSources) {
- *   iarest.runColumnAnalysisForDataSources(aStaleSources, function(errExec, tamsAnalyzed) {
+ * iarest.getStaleAnalysisResults("Automated Profiling", new Date(), function(errStale, projectRID, aStaleSources) {
+ *   iarest.runColumnAnalysisForDataSources(projectRID, aStaleSources, function(errExec, tamsAnalyzed) {
  *     // Note that the API returns async; if you want to busy-wait you need to poll events on Kafka
  *   });
  * });
@@ -1018,7 +1018,7 @@ const RestIA = (function() {
    * Get a list of all of the data sources in the specified Information Analyzer project
    *
    * @param {string} projectName
-   * @param {listCallback} callback - callback that handles the response (will be entries with HOST||DB.SCHEMA.TABLE and HOST||PATH:FILE)
+   * @param {dataSourceListCallback} callback - callback that handles the response (will be entries with HOST||DB.SCHEMA.TABLE and HOST||PATH:FILE)
    */
   const getProjectDataSourceList = function(projectName, callback) {
   
@@ -1082,7 +1082,7 @@ const RestIA = (function() {
           }
         }
 
-        callback(err, aDSs);
+        callback(err, projectRID, aDSs);
 
       });
 
@@ -1093,10 +1093,11 @@ const RestIA = (function() {
   /**
    * Run a full column analysis against the list of data sources specificed (based on TAM RIDs)
    *
+   * @param {string} projectRID - the RID of the project in which to execute the analysis
    * @param {Object[]} aDataSources - an array of data sources, as returned by getProjectDataSourceList
-   * @param {requestCallback} callback - callback that handles the response
+   * @param {columnAnalysisCallback} callback - callback that handles the response
    */
-  const runColumnAnalysisForDataSources = function(aDataSources, callback) {
+  const runColumnAnalysisForDataSources = function(projectRID, aDataSources, callback) {
     if (aDataSources.length > 0) {
       const tamsToSources = {};
       const aTAMs = [];
@@ -1108,7 +1109,7 @@ const RestIA = (function() {
       const input = {
         "tamRids": aTAMs
       };
-      makeRequest('POST', "/ibm/iis/dq/da/rest/v1/workspaces/ec1481df.64b1b87d.a6a5f3rpa.3uf1d0s.bsk7h8.9ai6gjsspaec618j99rn2/analysis/doRun", input, 'application/json', function(res, resExec) {
+      makeRequest('POST', "/ibm/iis/dq/da/rest/v1/workspaces/" + projectRID + "/analysis/doRun", input, 'application/json', function(res, resExec) {
         let err = null;
         if (res.statusCode !== 200) {
           err = "Unsuccessful request " + res.statusCode;
@@ -1163,12 +1164,12 @@ const RestIA = (function() {
    *
    * @param {string} projectName - name of the IA project
    * @param {Date} timeToConsiderStale - the time before which any analysis results should be considered stale
-   * @param {requestCallback} callback - callback that handles the response
+   * @param {staleAnalysisCallback} callback - callback that handles the response
    */
   const getStaleAnalysisResults = function(projectName, timeToConsiderStale, callback) {
   
     // Get a list of all project data sources (everything we should check for staleness)
-    getProjectDataSourceList(projectName, function (err, aDataSources) {
+    getProjectDataSourceList(projectName, function (err, projectRID, aDataSources) {
   
       const aToAnalyze = [];
 
@@ -1184,7 +1185,7 @@ const RestIA = (function() {
         }
       }
 
-      return callback(err, aToAnalyze);
+      return callback(err, projectRID, aToAnalyze);
 
     });
 
@@ -1333,6 +1334,30 @@ const RestIA = (function() {
    * @param {string[]} aResponse - the response of the request, in the form of an array
    */
   
+  /**
+   * This callback is invoked as the result of an IA REST API call to retrieve a list of data sources within a project.
+   * @callback dataSourceListCallback
+   * @param {string} errorMessage - any error message, or null if no errors
+   * @param {string} projectRID - the RID of the Information Analyzer project
+   * @param {string[]} aDataSources - an array of entries with HOST||DB.SCHEMA.TABLE for database tables and HOST||PATH:FILE for data files
+   */
+
+  /**
+   * This callback is invoked as the result of an IA REST API call to determine which data sources have not been refreshed within a provided time period.
+   * @callback staleAnalysisCallback
+   * @param {string} errorMessage - any error message, or null if no errors
+   * @param {string} projectRID - the RID of the Information Analyzer project
+   * @param {string[]} aDataSources - an array of entries with HOST||DB.SCHEMA.TABLE for database tables and HOST||PATH:FILE for data files, only for those that are stale
+   */
+
+  /**
+   * This callback is invoked as the result of an IA REST API call to execute column analysis.
+   * @callback columnAnalysisCallback
+   * @param {string} errorMessage - any error message, or null if no errors
+   * @param {Object} tamsToSources - a dictionary of TAM RIDs to data sources
+   * @param {Object} schedule - an object containing 'scheduleRids', which is an array of scheduler execution IDs
+   */
+
   /**
    * This callback is invoked as the result of an IA REST API call, providing the response of that request.
    * @callback statusCallback
