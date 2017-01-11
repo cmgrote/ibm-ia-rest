@@ -26,7 +26,8 @@ const ColumnAnalysis = require('./classes/column-analysis');
 const PublishResults = require('./classes/publish-results');
 
 /**
- * @file Re-usable functions for interacting with Information Analyzer's REST API
+ * Re-usable functions for interacting with Information Analyzer's REST API
+ * @module ibm-ia-rest
  * @license Apache-2.0
  * @requires https
  * @requires xmldom
@@ -43,10 +44,6 @@ const PublishResults = require('./classes/publish-results');
  *     // Note that the API returns async; if you want to busy-wait you need to poll events on Kafka
  *   });
  * });
- */
-
-/**
- * @module ibm-ia-rest
  */
 const RestIA = (function() {
 

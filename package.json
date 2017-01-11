@@ -12,11 +12,7 @@
   "dependencies": {
     "xmldom": ">=0.1.22",
     "xpath": ">=0.0.23",
-    "progress": ">=1.1.8",
-    "yargs": ">=5.0.0",
-    "shelljs": ">=0.7.4",
-    "ibm-iis-commons": ">=0.0.1",
-    "moment": ">=2.15.1"
+    "ibm-igc-rest": ">=0.9.0"
   },
   "devDependencies": {
     "jsdoc": "^3.4.0",
