@@ -99,12 +99,12 @@ let tamsToSources = {};
 let iTotalTAMs = 0;
 const tamsProcessed = [];
 
-iarest.getStaleAnalysisResults(projectName, staleBefore, function(errStale, aStaleSources) {
+iarest.getStaleAnalysisResults(projectName, staleBefore, function(errStale, projectRID, aStaleSources) {
   handleError("getting stale analysis results", errStale);
 
   console.log("  running column analysis for " + aStaleSources.length + " sources.");
   iTotalTAMs = aStaleSources.length;
-  iarest.runColumnAnalysisForDataSources(aStaleSources, function(errExec, tamsAnalyzed) {
+  iarest.runColumnAnalysisForDataSources(projectRID, aStaleSources, function(errExec, tamsAnalyzed) {
     handleError("running column analysis", errExec);
 
     // Keep a copy of the TAMs we submitted for analysis so that we can track their completion via Kafka (for auto-publishing once completed)
