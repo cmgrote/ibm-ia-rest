@@ -113,7 +113,11 @@ function processAllCollectedDataForRule(err, aStewardsForOneObject, iProcessed, 
 igcrest.search(iaDataRuleQ, function (err, resSearch) {
 
   if (resSearch.items.length === 0) {
-    console.warn("WARN: Did not find any Data Rules with the name '" + receivedRuleName + "'.");
+    if (receivedRuleName === undefined) {
+      console.warn("WARN: Did not find any Data Rules defined.");
+    } else {
+      console.warn("WARN: Did not find any Data Rules with the name '" + receivedRuleName + "'.");
+    }
   } else {
 
     for (let r = 0; r < resSearch.items.length; r++) {
@@ -127,7 +131,7 @@ igcrest.search(iaDataRuleQ, function (err, resSearch) {
       const bindingDetails = rule.implemented_bindings.items;
 
       if (policyDetails.length === 0 || infoGovRuleDetails.length === 0 || bindingDetails.length === 0) {
-        console.warn("WARN: Rule '" + ruleName + "' is missing one or more required relationships.");
+        console.warn("WARN: Rule '" + ruleName + "' is either not bound to an implementation or is missing other expected relationships.");
       } else {
         const dqDimension = policyDetails[0]._name;
         const infoGovRuleName = infoGovRuleDetails[0]._name;
@@ -246,7 +250,7 @@ igcrest.search(dsDataRuleQ, function (err, resSearch) {
       //const governedAssets = rule["implements_rules.governs_assets"].items;
 
       if (policyDetails.length === 0 || infoGovRuleDetails.length === 0) {
-        console.warn("WARN: Rule '" + ruleName + "' is missing one or more required relationships.");
+        console.warn("WARN: DataStage-embedded rule '" + ruleName + "' is missing expected business metadata relationships.");
       } else {
         const dqDimension = policyDetails[0]._name;
         const infoGovRuleName = infoGovRuleDetails[0]._name;
