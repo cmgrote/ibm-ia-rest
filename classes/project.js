@@ -20,7 +20,6 @@ const xmldom = require('xmldom');
 
 /**
  * Project class -- for handling Information Analyzer projects
- * @license Apache-2.0
  */
 class Project {
 

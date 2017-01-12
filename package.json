@@ -1,18 +1,17 @@
 {
   "name": "ibm-ia-rest",
-  "version": "1.0.0",
+  "version": "0.2.0",
   "description": "Library to use IBM Information Analyzer REST API",
   "main": "./index.js",
   "files": [
     "index.js",
-    "docs",
     "classes",
     "LICENSE"
   ],
   "dependencies": {
     "xmldom": ">=0.1.22",
     "xpath": ">=0.0.23",
-    "ibm-igc-rest": ">=0.9.0"
+    "ibm-igc-rest": ">=0.2.0"
   },
   "devDependencies": {
     "jsdoc": "^3.4.0",
