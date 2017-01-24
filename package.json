@@ -12,6 +12,8 @@
   "dependencies": {
     "xmldom": ">=0.1.22",
     "xpath": ">=0.0.23",
+    "shelljs": ">=0.7.4",
+    "yargs": ">=6.6.0",
     "ibm-igc-rest": ">=0.2.0"
   },
   "devDependencies": {
