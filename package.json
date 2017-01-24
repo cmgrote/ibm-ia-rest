@@ -6,6 +6,7 @@
   "files": [
     "index.js",
     "classes",
+    "bin",
     "LICENSE"
   ],
   "dependencies": {
@@ -17,6 +18,10 @@
     "jsdoc": "^3.4.0",
     "jshint": "^2.9.1",
     "mocha": "^2.4.5"
+  },
+  "bin": {
+    "exportAllRuleAssets": "bin/exportAllRuleAssets.js",
+    "importAllRuleAssets": "bin/importAllRuleAssets.js"
   },
   "engines": {
     "node": ">=4.2.4"
