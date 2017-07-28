@@ -1412,7 +1412,7 @@ const RestIA = (function() {
 module.exports = RestIA;
 
 if (typeof require === 'function') {
-  exports.Project = Project;
-  exports.ColumnAnalysis = ColumnAnalysis;
-  exports.PublishResults = PublishResults;
+  module.exports.Project = Project;
+  module.exports.ColumnAnalysis = ColumnAnalysis;
+  module.exports.PublishResults = PublishResults;
 }
